@@ -42,6 +42,7 @@ build_prefix() {
 }
 
 export WGET="wget --progress=bar:force"
+: "${MPV_GIT_URL:=https://github.com/FongMi/mpv}"
 
 if [ "$1" = "export" ]; then
 	# export variable with unique cache identifier
@@ -60,9 +61,11 @@ elif [ "$1" = "install" ]; then
 
 	msg "Fetching mpv"
 	mkdir -p deps/mpv
-	$WGET https://github.com/mpv-player/mpv/archive/master.tar.gz -O master.tgz
-	tar -xzf master.tgz -C deps/mpv --strip-components=1
-	rm master.tgz
+	if [ -n "$MPV_GIT_REF" ]; then
+		git clone --depth 1 --branch "$MPV_GIT_REF" "$MPV_GIT_URL" deps/mpv
+	else
+		git clone --depth 1 "$MPV_GIT_URL" deps/mpv
+	fi
 
 	msg "Trying to fetch existing prefix"
 	mkdir -p prefix

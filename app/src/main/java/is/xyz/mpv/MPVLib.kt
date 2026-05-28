@@ -19,6 +19,7 @@ object MPVLib {
     external fun init()
     external fun destroy()
     external fun attachSurface(surface: Surface)
+    external fun replaceSurface(surface: Surface)
     external fun detachSurface()
 
     external fun command(cmd: Array<out String>)

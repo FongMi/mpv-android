@@ -76,6 +76,13 @@ fi
 [ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo
 
 # mpv
-[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv
+: "${MPV_GIT_URL:=https://github.com/FongMi/mpv}"
+if [ ! -d mpv ]; then
+	if [ -n "$MPV_GIT_REF" ]; then
+		git clone --branch "$MPV_GIT_REF" "$MPV_GIT_URL" mpv
+	else
+		git clone "$MPV_GIT_URL" mpv
+	fi
+fi
 
 cd ..
