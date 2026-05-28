@@ -17,8 +17,8 @@ fetch_prefix() {
 		else
 			echo "Cache seems to be empty"
 		fi
-		printf 'Expecting "%s",\nfound     "%s".\n' "$ci_tarball" "$text"
-		if [[ "$text" == "$ci_tarball" ]]; then
+		printf 'Expecting "%s",\nfound     "%s".\n' "$ci_cache_id" "$text"
+		if [[ "$text" == "$ci_cache_id" ]]; then
 			tar -xzf "$CACHE_FOLDER/data.tgz" -C prefix && return 0
 		fi
 	fi
@@ -26,27 +26,32 @@ fetch_prefix() {
 }
 
 build_prefix() {
-	msg "Building the prefix ($ci_tarball)..."
+	msg "Building the prefix ($ci_cache_id)..."
 
 	msg "Fetching deps"
 	IN_CI=1 ./include/download-deps.sh
 
 	msg "Compiling"
-	./buildall.sh --only-deps mpv
+	for arch in $MPV_ANDROID_ARCHES; do
+		msg "Compiling dependencies for $arch"
+		./buildall.sh --arch "$arch" --only-deps mpv
+	done
 
 	if [[ "$CACHE_MODE" == folder && -w "$CACHE_FOLDER" ]]; then
 		msg "Compressing the prefix"
 		tar -cvzf "$CACHE_FOLDER/data.tgz" -C prefix .
-		echo "$ci_tarball" >"$CACHE_FOLDER/id.txt"
+		echo "$ci_cache_id" >"$CACHE_FOLDER/id.txt"
 	fi
 }
 
 export WGET="wget --progress=bar:force"
 : "${MPV_GIT_URL:=https://github.com/FongMi/mpv}"
+: "${MPV_ANDROID_ARCHES:=armv7l arm64}"
+ci_cache_id="${ci_tarball}-${MPV_ANDROID_ARCHES// /_}"
 
 if [ "$1" = "export" ]; then
 	# export variable with unique cache identifier
-	echo "CACHE_IDENTIFIER=$ci_tarball"
+	echo "CACHE_IDENTIFIER=$ci_cache_id"
 	exit 0
 elif [ "$1" = "install" ]; then
 	# install deps
@@ -78,13 +83,17 @@ else
 	exit 1
 fi
 
-msg "Building mpv"
-./buildall.sh -n mpv || {
-	# show logfile if configure failed
-	[ ! -f deps/mpv/_build_armv7l/config.h ] && \
-		cat deps/mpv/_build_armv7l/meson-logs/meson-log.txt
-	exit 1
-}
+for arch in $MPV_ANDROID_ARCHES; do
+	msg "Building mpv ($arch)"
+	./buildall.sh --arch "$arch" -n mpv || {
+		# show logfile if configure failed
+		build_dir="deps/mpv/_build_$arch"
+		[ ! -f "$build_dir/config.h" ] && \
+			[ -f "$build_dir/meson-logs/meson-log.txt" ] && \
+			cat "$build_dir/meson-logs/meson-log.txt"
+		exit 1
+	}
+done
 
 msg "Building mpv-android"
 ./buildall.sh -n
