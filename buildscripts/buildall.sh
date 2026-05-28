@@ -42,7 +42,7 @@ loadarch () {
 	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
 	unset PKG_CONFIG_PATH
 
-	local apilvl=21
+	local apilvl=24
 	# ndk_triple: the target triple
 	local cc_triple # how the compilers are actually prefixed
 	if [[ "$1" == "armv7l" ]]; then
@@ -121,6 +121,15 @@ CROSSFILE
 	else
 		mv "$prefix_dir"/crossfile.{tmp,txt}
 	fi
+
+	mkdir -p "$prefix_dir/lib/pkgconfig"
+	cat >"$prefix_dir/lib/pkgconfig/vulkan.pc" <<VULKANPC
+Name: Vulkan-Loader
+Description: Android Vulkan loader
+Version: 1.3.238
+Libs: -lvulkan
+Cflags:
+VULKANPC
 }
 
 build () {
