@@ -48,19 +48,19 @@ loadarch () {
 	if [[ "$1" == "armv7l" ]]; then
 		export ndk_triple=arm-linux-androideabi
 		cc_triple=armv7a-linux-androideabi$android_api
-		prefix_name=armv7l
+		export prefix_name=armv7l
 	elif [[ "$1" == "arm64" ]]; then
 		export ndk_triple=aarch64-linux-android
 		cc_triple=$ndk_triple$android_api
-		prefix_name=arm64
+		export prefix_name=arm64
 	elif [[ "$1" == "x86" ]]; then
 		export ndk_triple=i686-linux-android
 		cc_triple=$ndk_triple$android_api
-		prefix_name=x86
+		export prefix_name=x86
 	elif [[ "$1" == "x86_64" ]]; then
 		export ndk_triple=x86_64-linux-android
 		cc_triple=$ndk_triple$android_api
-		prefix_name=x86_64
+		export prefix_name=x86_64
 	else
 		echo "Invalid architecture" >&2
 		exit 1

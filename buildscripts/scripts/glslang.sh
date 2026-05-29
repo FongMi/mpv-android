@@ -5,6 +5,7 @@
 
 build=_build$ndk_suffix
 : "${android_api:=24}"
+: "${prefix_name:=${ndk_suffix#_}}"
 
 if [ "$1" == "build" ]; then
 	true
