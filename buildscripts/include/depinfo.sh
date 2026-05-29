@@ -17,6 +17,7 @@ v_freetype=2.14.3
 v_mbedtls=3.6.5
 v_libxml2=2.15.3
 v_fontconfig=2.17.1
+v_glslang=vulkan-sdk-1.4.350.0
 
 
 ## Dependency tree
@@ -32,7 +33,8 @@ dep_harfbuzz=()
 dep_unibreak=()
 dep_libass=(freetype2 fontconfig fribidi harfbuzz unibreak)
 dep_lua=()
-dep_libplacebo=()
+dep_glslang=()
+dep_libplacebo=(glslang)
 dep_mpv=(ffmpeg libass lua libplacebo)
 dep_mpv_android=(mpv)
 
@@ -43,4 +45,4 @@ dep_mpv_android=(mpv)
 v_ci_ffmpeg=n8.1.1
 
 # filename used to uniquely identify a build prefix
-ci_tarball="prefix-ndk-${v_ndk}-vulkan-lua-${v_lua}-unibreak-${v_unibreak}-harfbuzz-${v_harfbuzz}-fribidi-${v_fribidi}-freetype-${v_freetype}-libxml2-${v_libxml2}-fontconfig-${v_fontconfig}-mbedtls-${v_mbedtls}-ffmpeg-${v_ci_ffmpeg}.tgz"
+ci_tarball="prefix-ndk-${v_ndk}-vulkan-glslang-${v_glslang}-lua-${v_lua}-unibreak-${v_unibreak}-harfbuzz-${v_harfbuzz}-fribidi-${v_fribidi}-freetype-${v_freetype}-libxml2-${v_libxml2}-fontconfig-${v_fontconfig}-mbedtls-${v_mbedtls}-ffmpeg-${v_ci_ffmpeg}.tgz"

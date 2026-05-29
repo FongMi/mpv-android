@@ -14,12 +14,22 @@ else
 fi
 
 unset CC CXX
+export CFLAGS="-I$prefix_dir/include ${CFLAGS:-}"
+export CXXFLAGS="-I$prefix_dir/include ${CXXFLAGS:-}"
+export LDFLAGS="-L$prefix_dir/lib ${LDFLAGS:-}"
 meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
-	-Dvulkan=enabled -Ddemos=false
+	-Dvulkan=enabled -Dglslang=enabled -Dshaderc=disabled \
+	-Dvulkan-sdk="$prefix_dir" -Ddemos=false
 
 ninja -C $build -j$cores
 DESTDIR="$prefix_dir" ninja -C $build install
 
-# add missing library for static linking
+link_libs=()
+for lib in glslang-default-resource-limits SPIRV glslang MachineIndependent OSDependent OGLCompiler GenericCodeGen; do
+	[ -f "$prefix_dir/lib/lib${lib}.a" ] && link_libs+=("-l${lib}")
+done
+link_libs+=("-lc++")
+
+# add missing libraries for static linking
 # this isn't "-lstdc++" due to a meson bug: https://github.com/mesonbuild/meson/issues/11300
-${SED:-sed} '/^Libs:/ s|$| -lc++|' "$prefix_dir/lib/pkgconfig/libplacebo.pc" -i
+${SED:-sed} "/^Libs:/ s|$| ${link_libs[*]}|" "$prefix_dir/lib/pkgconfig/libplacebo.pc" -i

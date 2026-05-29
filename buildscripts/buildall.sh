@@ -42,24 +42,24 @@ loadarch () {
 	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
 	unset PKG_CONFIG_PATH
 
-	local apilvl=24
+	export android_api=24
 	# ndk_triple: the target triple
 	local cc_triple # how the compilers are actually prefixed
 	if [[ "$1" == "armv7l" ]]; then
 		export ndk_triple=arm-linux-androideabi
-		cc_triple=armv7a-linux-androideabi$apilvl
+		cc_triple=armv7a-linux-androideabi$android_api
 		prefix_name=armv7l
 	elif [[ "$1" == "arm64" ]]; then
 		export ndk_triple=aarch64-linux-android
-		cc_triple=$ndk_triple$apilvl
+		cc_triple=$ndk_triple$android_api
 		prefix_name=arm64
 	elif [[ "$1" == "x86" ]]; then
 		export ndk_triple=i686-linux-android
-		cc_triple=$ndk_triple$apilvl
+		cc_triple=$ndk_triple$android_api
 		prefix_name=x86
 	elif [[ "$1" == "x86_64" ]]; then
 		export ndk_triple=x86_64-linux-android
-		cc_triple=$ndk_triple$apilvl
+		cc_triple=$ndk_triple$android_api
 		prefix_name=x86_64
 	else
 		echo "Invalid architecture" >&2
@@ -154,8 +154,8 @@ build () {
 		pushd deps/$1
 		BUILDSCRIPT=../../scripts/$1.sh
 	fi
-	[ $cleanbuild -eq 1 ] && $BUILDSCRIPT clean
-	$BUILDSCRIPT build
+	[ $cleanbuild -eq 1 ] && bash "$BUILDSCRIPT" clean
+	bash "$BUILDSCRIPT" build
 	popd
 	markbuilt $1
 }

@@ -72,6 +72,9 @@ if [ ! -d lua ]; then
 		tar -xz -C lua --strip-components=1
 fi
 
+# glslang
+[ ! -d glslang ] && git clone --depth=1 --branch "$v_glslang" https://github.com/KhronosGroup/glslang glslang
+
 # libplacebo
 [ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo
 
