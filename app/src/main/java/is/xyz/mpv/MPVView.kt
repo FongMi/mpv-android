@@ -281,15 +281,11 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
 
     var paused: Boolean?
         get() = MPVLib.getPropertyBoolean("pause")
-        set(paused) {
-            MPVLib.setPropertyBoolean("pause", paused!!)
-        }
+        set(paused) = MPVLib.setPropertyBoolean("pause", paused!!)
 
     var timePos: Double?
         get() = MPVLib.getPropertyDouble("time-pos/full")
-        set(progress) {
-            MPVLib.setPropertyDouble("time-pos", progress!!)
-        }
+        set(progress) = MPVLib.setPropertyDouble("time-pos", progress!!)
 
     /** name of currently active hardware decoder or "no" */
     val hwdecActive: String
@@ -297,21 +293,15 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
 
     var playbackSpeed: Double?
         get() = MPVLib.getPropertyDouble("speed")
-        set(speed) {
-            MPVLib.setPropertyDouble("speed", speed!!)
-        }
+        set(speed) = MPVLib.setPropertyDouble("speed", speed!!)
 
     var subDelay: Double?
         get() = MPVLib.getPropertyDouble("sub-delay")
-        set(speed) {
-            MPVLib.setPropertyDouble("sub-delay", speed!!)
-        }
+        set(speed) = MPVLib.setPropertyDouble("sub-delay", speed!!)
 
     var secondarySubDelay: Double?
         get() = MPVLib.getPropertyDouble("secondary-sub-delay")
-        set(speed) {
-            MPVLib.setPropertyDouble("secondary-sub-delay", speed!!)
-        }
+        set(speed) = MPVLib.setPropertyDouble("secondary-sub-delay", speed!!)
 
     val estimatedVfFps: Double?
         get() = MPVLib.getPropertyDouble("estimated-vf-fps")
@@ -357,21 +347,10 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
 
     // Commands
 
-    fun cyclePause() {
-        MPVLib.command(arrayOf("cycle", "pause"))
-    }
-
-    fun cycleAudio() {
-        MPVLib.command(arrayOf("cycle", "audio"))
-    }
-
-    fun cycleSub() {
-        MPVLib.command(arrayOf("cycle", "sub"))
-    }
-
-    fun cycleHwdec() {
-        MPVLib.command(arrayOf("cycle-values", "hwdec", HWDECS, "no"))
-    }
+    fun cyclePause() = MPVLib.command(arrayOf("cycle", "pause"))
+    fun cycleAudio() = MPVLib.command(arrayOf("cycle", "audio"))
+    fun cycleSub() = MPVLib.command(arrayOf("cycle", "sub"))
+    fun cycleHwdec() = MPVLib.command(arrayOf("cycle-values", "hwdec", HWDECS, "no"))
 
     fun cycleSpeed() {
         val speeds = arrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)

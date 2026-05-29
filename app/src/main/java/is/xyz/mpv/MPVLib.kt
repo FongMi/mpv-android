@@ -22,22 +22,22 @@ object MPVLib {
     external fun replaceSurface(surface: Surface)
     external fun detachSurface()
 
-    external fun command(cmd: Array<out String>): Int
+    external fun command(cmd: Array<out String>)
 
     external fun setOptionString(name: String, value: String): Int
 
     external fun grabThumbnail(dimension: Int): Bitmap?
 
     external fun getPropertyInt(property: String): Int?
-    external fun setPropertyInt(property: String, value: Int): Int
+    external fun setPropertyInt(property: String, value: Int)
     external fun getPropertyDouble(property: String): Double?
-    external fun setPropertyDouble(property: String, value: Double): Int
+    external fun setPropertyDouble(property: String, value: Double)
     external fun getPropertyBoolean(property: String): Boolean?
-    external fun setPropertyBoolean(property: String, value: Boolean): Int
+    external fun setPropertyBoolean(property: String, value: Boolean)
     external fun getPropertyString(property: String): String?
-    external fun setPropertyString(property: String, value: String): Int
+    external fun setPropertyString(property: String, value: String)
 
-    external fun observeProperty(property: String, format: Int): Int
+    external fun observeProperty(property: String, format: Int)
 
     private val observers = mutableListOf<EventObserver>()
 

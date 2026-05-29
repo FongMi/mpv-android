@@ -1020,13 +1020,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
     }
 
-    private fun playlistPrev() {
-        MPVLib.command(arrayOf("playlist-prev"))
-    }
-
-    private fun playlistNext() {
-        MPVLib.command(arrayOf("playlist-next"))
-    }
+    private fun playlistPrev() = MPVLib.command(arrayOf("playlist-prev"))
+    private fun playlistNext() = MPVLib.command(arrayOf("playlist-next"))
 
     private fun showToast(msg: String, cancel: Boolean = false) {
         if (cancel)
