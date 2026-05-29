@@ -9,6 +9,16 @@ msg() {
 	printf '==> %s\n' "$1"
 }
 
+show_meson_logs() {
+	local arch="$1"
+	local log
+	for log in deps/*/_build_"$arch"/meson-logs/meson-log.txt; do
+		[ -f "$log" ] || continue
+		msg "Meson log: $log"
+		cat "$log"
+	done
+}
+
 fetch_prefix() {
 	if [[ "$CACHE_MODE" == folder ]]; then
 		local text=
@@ -34,7 +44,10 @@ build_prefix() {
 	msg "Compiling"
 	for arch in $MPV_ANDROID_ARCHES; do
 		msg "Compiling dependencies for $arch"
-		./buildall.sh --arch "$arch" --only-deps mpv
+		./buildall.sh --arch "$arch" --only-deps mpv || {
+			show_meson_logs "$arch"
+			exit 1
+		}
 	done
 
 	if [[ "$CACHE_MODE" == folder && -w "$CACHE_FOLDER" ]]; then

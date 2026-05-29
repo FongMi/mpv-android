@@ -14,18 +14,22 @@ else
 fi
 
 unset CC CXX
+if [ ! -f "$prefix_dir/lib/libshaderc.a" ]; then
+	echo "shaderc dependency is missing: $prefix_dir/lib/libshaderc.a" >&2
+	exit 1
+fi
 export CFLAGS="-I$prefix_dir/include ${CFLAGS:-}"
 export CXXFLAGS="-I$prefix_dir/include ${CXXFLAGS:-}"
 export LDFLAGS="-L$prefix_dir/lib ${LDFLAGS:-}"
 meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
-	-Dvulkan=enabled -Dglslang=enabled -Dshaderc=disabled \
-	-Dvulkan-sdk="$prefix_dir" -Ddemos=false
+	-Dvulkan=enabled -Dshaderc=enabled -Dglslang=disabled \
+	-Ddemos=false
 
 ninja -C $build -j$cores
 DESTDIR="$prefix_dir" ninja -C $build install
 
 link_libs=()
-for lib in glslang-default-resource-limits SPIRV glslang MachineIndependent OSDependent OGLCompiler GenericCodeGen; do
+for lib in shaderc; do
 	[ -f "$prefix_dir/lib/lib${lib}.a" ] && link_libs+=("-l${lib}")
 done
 link_libs+=("-lc++")
