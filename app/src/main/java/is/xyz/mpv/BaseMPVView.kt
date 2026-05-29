@@ -67,7 +67,6 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
 
     /**
      * Sets the VO to use.
-     * It is automatically disabled/enabled when the surface dis-/appears.
      */
     fun setVo(vo: String) {
         voInUse = vo
@@ -90,19 +89,12 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
             MPVLib.command(arrayOf("loadfile", filePath as String))
             filePath = null
         } else {
-            // We disable video output when the context disappears, enable it back
             MPVLib.setPropertyString("vo", voInUse)
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         Log.w(TAG, "detaching surface")
-        MPVLib.setPropertyString("vo", "null")
-        MPVLib.setPropertyString("force-window", "no")
-        // Note that before calling detachSurface() we need to be sure that libmpv
-        // is done using the surface.
-        // FIXME: There could be a race condition here, because I don't think
-        // setting a property will wait for VO deinit.
         MPVLib.detachSurface()
     }
 
