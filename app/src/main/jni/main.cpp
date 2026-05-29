@@ -24,7 +24,7 @@ extern "C" {
     jni_func(void, init);
     jni_func(void, destroy);
 
-    jni_func(void, command, jobjectArray jarray);
+    jni_func(jint, command, jobjectArray jarray);
 };
 
 JavaVM *g_vm;
@@ -32,6 +32,17 @@ mpv_handle *g_mpv;
 std::atomic<bool> g_event_thread_request_exit(false);
 
 static pthread_t event_thread_id;
+
+static void release_command_arguments(JNIEnv *env, int len, jstring *jarguments,
+                                      const char **arguments)
+{
+    for (int i = 0; i < len; ++i) {
+        if (arguments[i])
+            env->ReleaseStringUTFChars(jarguments[i], arguments[i]);
+        if (jarguments[i])
+            env->DeleteLocalRef(jarguments[i]);
+    }
+}
 
 static void prepare_environment(JNIEnv *env, jobject appctx) {
     setlocale(LC_NUMERIC, "C");
@@ -90,19 +101,36 @@ jni_func(void, destroy) {
     g_mpv = NULL;
 }
 
-jni_func(void, command, jobjectArray jarray) {
+jni_func(jint, command, jobjectArray jarray) {
     CHECK_MPV_INIT();
 
     const char *arguments[128] = {0};
+    jstring jarguments[128] = {0};
+    if (!jarray)
+        return MPV_ERROR_INVALID_PARAMETER;
+
     int len = env->GetArrayLength(jarray);
     if (len >= ARRAYLEN(arguments))
-        die("too many command arguments");
+        return MPV_ERROR_INVALID_PARAMETER;
 
-    for (int i = 0; i < len; ++i)
-        arguments[i] = env->GetStringUTFChars((jstring)env->GetObjectArrayElement(jarray, i), NULL);
+    for (int i = 0; i < len; ++i) {
+        jarguments[i] = (jstring)env->GetObjectArrayElement(jarray, i);
+        if (!jarguments[i]) {
+            release_command_arguments(env, len, jarguments, arguments);
+            return MPV_ERROR_INVALID_PARAMETER;
+        }
+        arguments[i] = env->GetStringUTFChars(jarguments[i], NULL);
+        if (!arguments[i]) {
+            release_command_arguments(env, len, jarguments, arguments);
+            return MPV_ERROR_NOMEM;
+        }
+    }
 
-    mpv_command(g_mpv, arguments);
+    int result = mpv_command(g_mpv, arguments);
+    if (result < 0)
+        ALOGE("mpv_command returned error %s", mpv_error_string(result));
 
-    for (int i = 0; i < len; ++i)
-        env->ReleaseStringUTFChars((jstring)env->GetObjectArrayElement(jarray, i), arguments[i]);
+    release_command_arguments(env, len, jarguments, arguments);
+
+    return result;
 }
