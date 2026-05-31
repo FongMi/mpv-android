@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <mpv/client.h>
@@ -18,6 +19,7 @@ extern "C" {
     jni_func(jint, setPropertyBoolean, jstring property, jboolean value);
     jni_func(jstring, getPropertyString, jstring jproperty);
     jni_func(jint, setPropertyString, jstring jproperty, jstring jvalue);
+    jni_func(jbyteArray, getPropertyByteArray, jstring jproperty);
 
     jni_func(jint, observeProperty, jstring property, jint format);
 }
@@ -86,6 +88,21 @@ static int common_set_property(JNIEnv *env, jstring jproperty, mpv_format format
     return result;
 }
 
+static jbyteArray new_byte_array(JNIEnv *env, const struct mpv_byte_array *bytes)
+{
+    if (!bytes || bytes->size > static_cast<size_t>(INT32_MAX) ||
+            (bytes->size > 0 && !bytes->data))
+        return NULL;
+
+    jsize size = static_cast<jsize>(bytes->size);
+    jbyteArray result = env->NewByteArray(size);
+    if (!result || size == 0)
+        return result;
+
+    env->SetByteArrayRegion(result, 0, size, reinterpret_cast<const jbyte *>(bytes->data));
+    return result;
+}
+
 jni_func(jobject, getPropertyInt, jstring jproperty) {
     int64_t value = 0;
     if (common_get_property(env, jproperty, MPV_FORMAT_INT64, &value) < 0)
@@ -114,6 +131,16 @@ jni_func(jstring, getPropertyString, jstring jproperty) {
     jstring jvalue = env->NewStringUTF(value);
     mpv_free(value);
     return jvalue;
+}
+
+jni_func(jbyteArray, getPropertyByteArray, jstring jproperty) {
+    mpv_node node{};
+    if (common_get_property(env, jproperty, MPV_FORMAT_NODE, &node) < 0)
+        return NULL;
+    jbyteArray result = node.format == MPV_FORMAT_BYTE_ARRAY ?
+            new_byte_array(env, node.u.ba) : NULL;
+    mpv_free_node_contents(&node);
+    return result;
 }
 
 jni_func(jint, setPropertyInt, jstring jproperty, jint jvalue) {

@@ -36,6 +36,7 @@ object MPVLib {
     external fun setPropertyBoolean(property: String, value: Boolean)
     external fun getPropertyString(property: String): String?
     external fun setPropertyString(property: String, value: String)
+    external fun getPropertyByteArray(property: String): ByteArray?
 
     external fun observeProperty(property: String, format: Int)
 
