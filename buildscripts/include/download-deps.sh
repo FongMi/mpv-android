@@ -7,6 +7,31 @@
 
 mkdir -p deps && cd deps
 
+clone_ci_commit() {
+	local repository=$1
+	local expected_commit=$2
+	local directory=$3
+	local clone_mode=${4:-}
+
+	if ! (
+		set -e
+		git init -q "$directory"
+		git -C "$directory" remote add origin "$repository"
+		git -C "$directory" fetch -q --depth=1 origin "$expected_commit"
+		git -C "$directory" checkout -q --detach FETCH_HEAD
+		if [[ "$clone_mode" == recursive ]]; then
+			git -C "$directory" submodule update -q \
+				--init --recursive --depth=1
+		fi
+		[[ $(git -C "$directory" rev-parse --verify 'HEAD^{commit}') == \
+			"$expected_commit" ]]
+	); then
+		echo "Failed to check out $repository commit $expected_commit." >&2
+		rm -rf "$directory"
+		return 1
+	fi
+}
+
 # mbedtls
 if [ ! -d mbedtls ]; then
 	mkdir mbedtls
@@ -15,13 +40,29 @@ if [ ! -d mbedtls ]; then
 fi
 
 # dav1d
-[ ! -d dav1d ] && git clone https://github.com/videolan/dav1d
+if [ ! -d dav1d ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${DAV1D_GIT_COMMIT:?DAV1D_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${DAV1D_GIT_URL:-https://github.com/videolan/dav1d}" \
+			"$DAV1D_GIT_COMMIT" dav1d
+	else
+		git clone --branch "$v_ci_dav1d" \
+			"${DAV1D_GIT_URL:-https://github.com/videolan/dav1d}" dav1d
+	fi
+fi
 
 # ffmpeg
 if [ ! -d ffmpeg ]; then
-	args=()
-	[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")
-	git clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${FFMPEG_GIT_COMMIT:?FFMPEG_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${FFMPEG_GIT_URL:-https://github.com/FongMi/FFmpeg.git}" \
+			"$FFMPEG_GIT_COMMIT" ffmpeg
+	else
+		git clone --branch "$v_ci_ffmpeg" \
+			"${FFMPEG_GIT_URL:-https://github.com/FongMi/FFmpeg.git}" ffmpeg
+	fi
 fi
 
 # freetype2
@@ -62,8 +103,88 @@ if [ ! -d fontconfig ]; then
 		tar -xz -C fontconfig --strip-components=1
 fi
 
+# libbluray
+if [ ! -d libbluray ]; then
+	mkdir libbluray
+	$WGET https://downloads.videolan.org/pub/videolan/libbluray/${v_libbluray}/libbluray-${v_libbluray}.tar.xz -O - | \
+		tar -xJ -C libbluray --strip-components=1
+fi
+
+# libiconv
+if [ ! -d libiconv ]; then
+	mkdir libiconv
+	$WGET https://ftp.gnu.org/pub/gnu/libiconv/libiconv-${v_libiconv}.tar.gz -O - | \
+		tar -xz -C libiconv --strip-components=1
+fi
+
+# uchardet
+if [ ! -d uchardet ]; then
+	mkdir uchardet
+	$WGET https://gitlab.freedesktop.org/uchardet/uchardet/-/archive/v${v_uchardet}/uchardet-v${v_uchardet}.tar.gz -O - | \
+		tar -xz -C uchardet --strip-components=1
+fi
+
+# bzip2
+if [ ! -d bzip2 ]; then
+	mkdir bzip2
+	$WGET https://sourceware.org/pub/bzip2/bzip2-${v_bzip2}.tar.gz -O - | \
+		tar -xz -C bzip2 --strip-components=1
+fi
+
+# xz
+if [ ! -d xz ]; then
+	mkdir xz
+	$WGET https://github.com/tukaani-project/xz/releases/download/v${v_xz}/xz-${v_xz}.tar.xz -O - | \
+		tar -xJ -C xz --strip-components=1
+fi
+
+# zstd
+if [ ! -d zstd ]; then
+	mkdir zstd
+	$WGET https://github.com/facebook/zstd/releases/download/v${v_zstd}/zstd-${v_zstd}.tar.gz -O - | \
+		tar -xz -C zstd --strip-components=1
+fi
+
+# libarchive
+if [ ! -d libarchive ]; then
+	mkdir libarchive
+	$WGET https://github.com/libarchive/libarchive/releases/download/v${v_libarchive}/libarchive-${v_libarchive}.tar.xz -O - | \
+		tar -xJ -C libarchive --strip-components=1
+fi
+
+# libdvdread
+if [ ! -d libdvdread ]; then
+	mkdir libdvdread
+	$WGET https://downloads.videolan.org/pub/videolan/libdvdread/${v_libdvdread}/libdvdread-${v_libdvdread}.tar.xz -O - | \
+		tar -xJ -C libdvdread --strip-components=1
+fi
+
+# libdvdnav
+if [ ! -d libdvdnav ]; then
+	mkdir libdvdnav
+	$WGET https://downloads.videolan.org/pub/videolan/libdvdnav/${v_libdvdnav}/libdvdnav-${v_libdvdnav}.tar.xz -O - | \
+		tar -xJ -C libdvdnav --strip-components=1
+fi
+
+# rubberband
+if [ ! -d rubberband ]; then
+	mkdir rubberband
+	$WGET https://github.com/breakfastquay/rubberband/archive/refs/tags/v${v_rubberband}.tar.gz -O - | \
+		tar -xz -C rubberband --strip-components=1
+fi
+
 # libass
-[ ! -d libass ] && git clone https://github.com/libass/libass
+if [ ! -d libass ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${LIBASS_GIT_COMMIT:?LIBASS_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" \
+			"$LIBASS_GIT_COMMIT" libass
+	else
+		git clone --branch "$v_ci_libass" \
+			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" libass
+	fi
+fi
 
 # lua
 if [ ! -d lua ]; then
@@ -72,8 +193,22 @@ if [ ! -d lua ]; then
 		tar -xz -C lua --strip-components=1
 fi
 
+# shaderc is built from the NDK-provided sources; this placeholder keeps it in
+# the dependency graph without cloning an extra copy.
+mkdir -p shaderc
+
 # libplacebo
-[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo
+if [ ! -d libplacebo ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${LIBPLACEBO_GIT_COMMIT:?LIBPLACEBO_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${LIBPLACEBO_GIT_URL:-https://github.com/FongMi/libplacebo.git}" \
+			"$LIBPLACEBO_GIT_COMMIT" libplacebo recursive
+	else
+		git clone --recursive --branch "$v_ci_libplacebo" \
+			"${LIBPLACEBO_GIT_URL:-https://github.com/FongMi/libplacebo.git}" libplacebo
+	fi
+fi
 
 # curl
 if [ ! -d curl ]; then
@@ -83,6 +218,13 @@ if [ ! -d curl ]; then
 fi
 
 # mpv
-[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv
+: "${MPV_GIT_URL:=https://github.com/FongMi/mpv}"
+if [ ! -d mpv ]; then
+	if [ -n "$MPV_GIT_REF" ]; then
+		git clone --branch "$MPV_GIT_REF" "$MPV_GIT_URL" mpv
+	else
+		git clone "$MPV_GIT_URL" mpv
+	fi
+fi
 
 cd ..
