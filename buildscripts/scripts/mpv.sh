@@ -19,6 +19,7 @@ meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
 	--default-library shared \
 	-Diconv=disabled -D{lua,libcurl}=enabled \
 	-Dlibmpv=true -Dcplayer=false \
+	-Dlibbluray=enabled \
 	-Dvulkan=enabled \
 	-Dmanpage-build=disabled
 
