@@ -25,6 +25,7 @@ patch_mpv_iconv_dependency () {
 		meson.build
 	rm -f meson.build.bak
 }
+
 if [ "$1" == "build" ]; then
 	true
 elif [ "$1" == "clean" ]; then
@@ -41,9 +42,9 @@ patch_mpv_iconv_dependency
 
 meson setup "$build" --cross-file "$prefix_dir"/crossfile.txt \
 	--default-library shared \
-	-Diconv=enabled -Duchardet=enabled \
-	-Dlibarchive=enabled -Ddvdnav=enabled \
-	-D{lua,libcurl}=enabled \
+	-D{iconv,uchardet}=enabled \
+	-D{libarchive,dvdnav}=enabled \
+	-D{lua,libcurl,rubberband}=enabled \
 	-Dlibmpv=true -Dcplayer=false \
 	-Dlibbluray=enabled \
 	-Dvulkan=enabled \
