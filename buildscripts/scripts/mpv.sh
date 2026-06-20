@@ -42,7 +42,7 @@ patch_mpv_iconv_dependency
 meson setup "$build" --cross-file "$prefix_dir"/crossfile.txt \
 	--default-library shared \
 	-Diconv=enabled -Duchardet=enabled \
-	-Dlibarchive=enabled \
+	-Dlibarchive=enabled -Ddvdnav=enabled \
 	-D{lua,libcurl}=enabled \
 	-Dlibmpv=true -Dcplayer=false \
 	-Dlibbluray=enabled \
