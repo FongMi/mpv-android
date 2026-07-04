@@ -24,6 +24,12 @@ cpu=armv7-a
 cpuflags=
 [[ "$ndk_triple" == "arm"* ]] && cpuflags="$cpuflags -mfpu=neon -mcpu=cortex-a8"
 
+audio_filters=(acompressor alimiter equalizer pan silenceremove stereotools volume)
+audio_filter_args=()
+for filter in "${audio_filters[@]}"; do
+	audio_filter_args+=(--enable-filter="$filter")
+done
+
 if ! grep -q -- "--enable-libarcdav3a" ../configure; then
 	echo "FFmpeg source does not contain libarcdav3a support. Update the pinned FFmpeg branch." >&2
 	exit 1
@@ -56,8 +62,10 @@ args=(
 	--disable-{muxers,encoders,devices}
 	# useful to taking screenshots
 	--enable-encoder=mjpeg,png
-	# useful for the `dump-cache` command
-	--enable-muxer=mov,matroska,mpegts
+	# required by TV audio settings through mpv's lavfi audio filter chain
+	"${audio_filter_args[@]}"
+	# useful for the `dump-cache` command and mpv audio passthrough
+	--enable-muxer=mov,matroska,mpegts,spdif
 )
 ../configure "${args[@]}"
 
