@@ -96,6 +96,13 @@ if [ ! -d libxml2 ]; then
 		tar -xz -C libxml2 --strip-components=1
 fi
 
+# libaribcaption
+if [ ! -d libaribcaption ]; then
+	mkdir libaribcaption
+	$WGET https://github.com/xqq/libaribcaption/archive/refs/tags/v${v_libaribcaption}.tar.gz -O - | \
+		tar -xz -C libaribcaption --strip-components=1
+fi
+
 # fontconfig
 if [ ! -d fontconfig ]; then
 	mkdir fontconfig
