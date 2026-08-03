@@ -209,6 +209,9 @@ bool init_methods_cache(JNIEnv *env)
         cache_static_method(env, &mpv_MPVLib_event, mpv_MPVLib,
                             "event", "(I)V") &&
         cache_static_method(
+            env, &mpv_MPVLib_eventEndFile_iiS, mpv_MPVLib,
+            "eventEndFile", "(IILjava/lang/String;)V") &&
+        cache_static_method(
             env, &mpv_MPVLib_logMessage_SiS, mpv_MPVLib,
             "logMessage", "(Ljava/lang/String;ILjava/lang/String;)V");
     if (!success)
