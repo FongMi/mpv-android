@@ -35,6 +35,8 @@ object MPVLib {
     external fun setPropertyBoolean(property: String, value: Boolean): Int
     external fun getPropertyString(property: String): String?
     external fun setPropertyString(property: String, value: String): Int
+    external fun getPropertyByteArray(property: String): ByteArray?
+
     external fun observeProperty(property: String, format: Int): Int
 
     private val observers = mutableListOf<EventObserver>()
