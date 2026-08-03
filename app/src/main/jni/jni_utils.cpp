@@ -123,6 +123,13 @@ jstring utf8_to_jstring(JNIEnv *env, const char *value)
                           static_cast<jsize>(utf16.size()));
 }
 
+void send_command_reply_to_java(JNIEnv *env, uint64_t request_id, int error)
+{
+    env->CallStaticVoidMethod(mpv_MPVLib, mpv_MPVLib_eventCommandReply_Ji,
+                              static_cast<jlong>(request_id),
+                              static_cast<jint>(error));
+}
+
 bool acquire_jni_env(JavaVM *vm, JNIEnv **env)
 {
     int ret = vm->GetEnv((void**) env, JNI_VERSION_1_6);
@@ -208,6 +215,8 @@ bool init_methods_cache(JNIEnv *env)
             "eventProperty", "(Ljava/lang/String;Ljava/lang/String;)V") &&
         cache_static_method(env, &mpv_MPVLib_event, mpv_MPVLib,
                             "event", "(I)V") &&
+        cache_static_method(env, &mpv_MPVLib_eventCommandReply_Ji, mpv_MPVLib,
+                            "eventCommandReply", "(JI)V") &&
         cache_static_method(
             env, &mpv_MPVLib_eventEndFile_iiS, mpv_MPVLib,
             "eventEndFile", "(IILjava/lang/String;)V") &&

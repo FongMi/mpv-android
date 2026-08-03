@@ -19,9 +19,16 @@ object MPVLib {
     external fun init()
     external fun destroy(): Int
     external fun attachSurface(surface: Surface)
+    external fun replaceSurface(surface: Surface)
     external fun detachSurface()
+    external fun attachOsdSurface(surface: Surface)
+    external fun replaceOsdSurface(surface: Surface)
+    external fun detachOsdSurface()
 
     external fun command(cmd: Array<out String>): Int
+
+    // Completion is delivered through EventObserver.eventCommandReply.
+    external fun enqueueCommand(requestId: Long, cmd: Array<out String>): Int
 
     external fun setOptionString(name: String, value: String): Int
 
@@ -104,6 +111,14 @@ object MPVLib {
     }
 
     @JvmStatic
+    fun eventCommandReply(requestId: Long, error: Int) {
+        synchronized(observers) {
+            for (o in observers)
+                o.eventCommandReply(requestId, error)
+        }
+    }
+
+    @JvmStatic
     fun eventEndFile(reason: Int, error: Int, errorString: String?) {
         synchronized(observers) {
             for (o in observers)
@@ -142,6 +157,7 @@ object MPVLib {
         fun eventProperty(property: String, value: String)
         fun eventProperty(property: String, value: Double)
         fun event(eventId: Int)
+        fun eventCommandReply(requestId: Long, error: Int) {}
         fun eventEndFile(reason: Int, error: Int, errorString: String?) {
             event(MpvEvent.MPV_EVENT_END_FILE)
         }

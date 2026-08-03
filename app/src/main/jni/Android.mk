@@ -71,6 +71,7 @@ LOCAL_CPPFLAGS  += -std=c++11
 LOCAL_SRC_FILES := \
 	main.cpp \
 	render.cpp \
+	request.cpp \
 	log.cpp \
 	jni_utils.cpp \
 	property.cpp \

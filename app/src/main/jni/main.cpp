@@ -4,6 +4,7 @@
 #include <locale.h>
 #include <atomic>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <mpv/client.h>
@@ -17,6 +18,7 @@ extern "C" {
 #include "log.h"
 #include "jni_utils.h"
 #include "event.h"
+#include "request.h"
 
 extern "C" {
     jni_func(void, create, jobject appctx);
@@ -24,6 +26,7 @@ extern "C" {
     jni_func(jint, destroy);
 
     jni_func(jint, command, jobjectArray jarray);
+    jni_func(jint, enqueueCommand, jlong request_id, jobjectArray jarray);
 };
 
 JavaVM *g_vm;
@@ -156,24 +159,14 @@ jni_func(jint, destroy) {
 
     if (!g_event_thread_started) {
         destroy_mpv_context();
+        release_requests(env);
         return MPV_ERROR_SUCCESS;
     }
 
-    if (g_shutdown_requested.exchange(true))
-        return MPV_ERROR_SUCCESS;
-
-    const char *arguments[] = {"quit", NULL};
-    int result = mpv_command_async(context, 0, arguments);
-    if (result < 0) {
-        ALOGE("failed to queue asynchronous mpv shutdown: %s",
-              mpv_error_string(result));
-        g_force_shutdown = true;
-        mpv_wakeup(context);
-    }
-    return MPV_ERROR_SUCCESS;
+    return enqueue_shutdown(env);
 }
 
-jni_func(jint, command, jobjectArray jarray) {
+static int run_command(JNIEnv *env, jobjectArray jarray, uint64_t request_id) {
     if (!check_mpv_initialized())
         return MPV_ERROR_UNINITIALIZED;
 
@@ -185,7 +178,6 @@ jni_func(jint, command, jobjectArray jarray) {
         return MPV_ERROR_INVALID_PARAMETER;
 
     std::vector<std::string> utf8_arguments(static_cast<size_t>(len));
-    std::vector<const char *> arguments(static_cast<size_t>(len) + 1, NULL);
     for (int i = 0; i < len; ++i) {
         jstring argument = (jstring)env->GetObjectArrayElement(jarray, i);
         if (!argument)
@@ -194,12 +186,31 @@ jni_func(jint, command, jobjectArray jarray) {
         env->DeleteLocalRef(argument);
         if (!converted)
             return env->ExceptionCheck() ? MPV_ERROR_NOMEM : MPV_ERROR_INVALID_PARAMETER;
-        arguments[i] = utf8_arguments[i].c_str();
     }
 
-    int result = mpv_command(g_mpv, arguments.data());
+    int result;
+    if (request_id) {
+        result = enqueue_command(env, request_id, std::move(utf8_arguments));
+    } else {
+        std::vector<const char *> arguments(static_cast<size_t>(len) + 1, NULL);
+        for (int i = 0; i < len; ++i)
+            arguments[i] = utf8_arguments[i].c_str();
+        result = mpv_command(g_mpv, arguments.data());
+    }
     if (result < 0)
-        ALOGE("mpv_command returned error %s", mpv_error_string(result));
+        ALOGE("%s returned error %s",
+              request_id ? "mpv_command_async" : "mpv_command",
+              mpv_error_string(result));
 
     return result;
+}
+
+jni_func(jint, command, jobjectArray jarray) {
+    return run_command(env, jarray, 0);
+}
+
+jni_func(jint, enqueueCommand, jlong request_id, jobjectArray jarray) {
+    if (request_id <= 0)
+        return MPV_ERROR_INVALID_PARAMETER;
+    return run_command(env, jarray, static_cast<uint64_t>(request_id));
 }

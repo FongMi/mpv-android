@@ -5,6 +5,7 @@
 #include "globals.h"
 #include "jni_utils.h"
 #include "log.h"
+#include "request.h"
 
 static void sendPropertyUpdateToJava(JNIEnv *env, mpv_event_property *prop)
 {
@@ -94,6 +95,7 @@ static void finishShutdown(JNIEnv *env, bool force)
             mpv_terminate_destroy(context);
         else
             mpv_destroy(context);
+        release_requests(env);
     }
 
     g_force_shutdown = false;
@@ -141,6 +143,10 @@ void *event_thread(void *arg)
         case MPV_EVENT_PROPERTY_CHANGE:
             mp_property = (mpv_event_property*)mp_event->data;
             sendPropertyUpdateToJava(env, mp_property);
+            break;
+        case MPV_EVENT_SET_PROPERTY_REPLY:
+        case MPV_EVENT_COMMAND_REPLY:
+            handle_request_reply(env, mp_event);
             break;
         case MPV_EVENT_END_FILE:
             ALOGV("event: %s\n", mpv_event_name(mp_event->event_id));
