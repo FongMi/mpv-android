@@ -8,7 +8,7 @@
 
 static void sendPropertyUpdateToJava(JNIEnv *env, mpv_event_property *prop)
 {
-    jstring jprop = env->NewStringUTF(prop->name);
+    jstring jprop = utf8_to_jstring(env, prop->name);
     jstring jvalue = NULL;
     switch (prop->format) {
     case MPV_FORMAT_NONE:
@@ -27,7 +27,7 @@ static void sendPropertyUpdateToJava(JNIEnv *env, mpv_event_property *prop)
             (jdouble) *(double*)prop->data);
         break;
     case MPV_FORMAT_STRING:
-        jvalue = env->NewStringUTF(*(const char**)prop->data);
+        jvalue = utf8_to_jstring(env, *(const char**)prop->data);
         env->CallStaticVoidMethod(mpv_MPVLib, mpv_MPVLib_eventProperty_SS, jprop, jvalue);
         break;
     default:
@@ -47,17 +47,8 @@ static void sendEventToJava(JNIEnv *env, int event)
 
 static void sendLogMessageToJava(JNIEnv *env, mpv_event_log_message *msg)
 {
-    // filter the most obvious cases of invalid utf-8, since Java would choke on it
-    const auto invalid_utf8 = [] (unsigned char c) {
-        return c == 0xc0 || c == 0xc1 || c >= 0xf5;
-    };
-    for (int i = 0; msg->text[i]; i++) {
-        if (invalid_utf8(static_cast<unsigned char>(msg->text[i])))
-            return;
-    }
-
-    jstring jprefix = env->NewStringUTF(msg->prefix);
-    jstring jtext = env->NewStringUTF(msg->text);
+    jstring jprefix = utf8_to_jstring(env, msg->prefix);
+    jstring jtext = utf8_to_jstring(env, msg->text);
 
     env->CallStaticVoidMethod(mpv_MPVLib, mpv_MPVLib_logMessage_SiS,
         jprefix, (jint) msg->log_level, jtext);
@@ -68,12 +59,40 @@ static void sendLogMessageToJava(JNIEnv *env, mpv_event_log_message *msg)
         env->DeleteLocalRef(jtext);
 }
 
+static void clearJavaCallbackException(JNIEnv *env)
+{
+    if (!env->ExceptionCheck())
+        return;
+    ALOGE("java event callback raised an exception");
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+}
+
+static void finishShutdown(JNIEnv *env, bool force)
+{
+    mpv_handle *context = g_mpv.exchange(NULL);
+    if (context) {
+        if (force)
+            mpv_terminate_destroy(context);
+        else
+            mpv_destroy(context);
+    }
+
+    g_force_shutdown = false;
+    g_event_thread_started = false;
+    sendEventToJava(env, MPV_EVENT_SHUTDOWN);
+    clearJavaCallbackException(env);
+    g_shutdown_requested = false;
+}
+
 void *event_thread(void *arg)
 {
     JNIEnv *env = NULL;
     acquire_jni_env(g_vm, &env);
-    if (!env)
-        die("failed to acquire java env");
+    if (!env) {
+        ALOGE("failed to acquire java env");
+        return NULL;
+    }
 
     while (1) {
         mpv_event *mp_event;
@@ -82,13 +101,20 @@ void *event_thread(void *arg)
 
         mp_event = mpv_wait_event(g_mpv, -1.0);
 
-        if (g_event_thread_request_exit)
+        if (g_force_shutdown) {
+            finishShutdown(env, true);
             break;
+        }
 
         if (mp_event->event_id == MPV_EVENT_NONE)
             continue;
 
         switch (mp_event->event_id) {
+        case MPV_EVENT_SHUTDOWN:
+            ALOGV("event: %s\n", mpv_event_name(mp_event->event_id));
+            g_shutdown_requested = true;
+            finishShutdown(env, false);
+            goto done;
         case MPV_EVENT_LOG_MESSAGE:
             msg = (mpv_event_log_message*)mp_event->data;
             ALOGV("[%s:%s] %s", msg->prefix, msg->level, msg->text);
@@ -103,8 +129,10 @@ void *event_thread(void *arg)
             sendEventToJava(env, mp_event->event_id);
             break;
         }
+        clearJavaCallbackException(env);
     }
 
+done:
     g_vm->DetachCurrentThread();
 
     return NULL;

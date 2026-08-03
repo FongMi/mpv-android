@@ -1849,8 +1849,12 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         override fun onSeekTo(pos: Long) {
             player.timePos = (pos / 1000.0)
         }
-        override fun onSkipToNext() = playlistNext()
-        override fun onSkipToPrevious() = playlistPrev()
+        override fun onSkipToNext() {
+            playlistNext()
+        }
+        override fun onSkipToPrevious() {
+            playlistPrev()
+        }
         override fun onSetRepeatMode(repeatMode: Int) {
             MPVLib.setPropertyString("loop-playlist",
                 if (repeatMode == PlaybackStateCompat.REPEAT_MODE_ALL) "inf" else "no")

@@ -17,26 +17,25 @@ object MPVLib {
 
     external fun create(appctx: Context)
     external fun init()
-    external fun destroy()
+    external fun destroy(): Int
     external fun attachSurface(surface: Surface)
     external fun detachSurface()
 
-    external fun command(cmd: Array<out String>)
+    external fun command(cmd: Array<out String>): Int
 
     external fun setOptionString(name: String, value: String): Int
 
     external fun grabThumbnail(dimension: Int): Bitmap?
 
     external fun getPropertyInt(property: String): Int?
-    external fun setPropertyInt(property: String, value: Int)
+    external fun setPropertyInt(property: String, value: Int): Int
     external fun getPropertyDouble(property: String): Double?
-    external fun setPropertyDouble(property: String, value: Double)
+    external fun setPropertyDouble(property: String, value: Double): Int
     external fun getPropertyBoolean(property: String): Boolean?
-    external fun setPropertyBoolean(property: String, value: Boolean)
+    external fun setPropertyBoolean(property: String, value: Boolean): Int
     external fun getPropertyString(property: String): String?
-    external fun setPropertyString(property: String, value: String)
-
-    external fun observeProperty(property: String, format: Int)
+    external fun setPropertyString(property: String, value: String): Int
+    external fun observeProperty(property: String, format: Int): Int
 
     private val observers = mutableListOf<EventObserver>()
 
@@ -174,6 +173,30 @@ object MPVLib {
         const val MPV_EVENT_PROPERTY_CHANGE: Int = 22
         const val MPV_EVENT_QUEUE_OVERFLOW: Int = 24
         const val MPV_EVENT_HOOK: Int = 25
+    }
+
+    object MpvError {
+        const val MPV_ERROR_SUCCESS: Int = 0
+        const val MPV_ERROR_EVENT_QUEUE_FULL: Int = -1
+        const val MPV_ERROR_NOMEM: Int = -2
+        const val MPV_ERROR_UNINITIALIZED: Int = -3
+        const val MPV_ERROR_INVALID_PARAMETER: Int = -4
+        const val MPV_ERROR_OPTION_NOT_FOUND: Int = -5
+        const val MPV_ERROR_OPTION_FORMAT: Int = -6
+        const val MPV_ERROR_OPTION_ERROR: Int = -7
+        const val MPV_ERROR_PROPERTY_NOT_FOUND: Int = -8
+        const val MPV_ERROR_PROPERTY_FORMAT: Int = -9
+        const val MPV_ERROR_PROPERTY_UNAVAILABLE: Int = -10
+        const val MPV_ERROR_PROPERTY_ERROR: Int = -11
+        const val MPV_ERROR_COMMAND: Int = -12
+        const val MPV_ERROR_LOADING_FAILED: Int = -13
+        const val MPV_ERROR_AO_INIT_FAILED: Int = -14
+        const val MPV_ERROR_VO_INIT_FAILED: Int = -15
+        const val MPV_ERROR_NOTHING_TO_PLAY: Int = -16
+        const val MPV_ERROR_UNKNOWN_FORMAT: Int = -17
+        const val MPV_ERROR_UNSUPPORTED: Int = -18
+        const val MPV_ERROR_NOT_IMPLEMENTED: Int = -19
+        const val MPV_ERROR_GENERIC: Int = -20
     }
 
     object MpvLogLevel {
