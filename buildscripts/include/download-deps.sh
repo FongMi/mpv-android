@@ -194,10 +194,43 @@ if [ ! -d libass ]; then
 fi
 
 # lua
-if [ ! -d lua ]; then
-	mkdir lua
-	$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \
-		tar -xz -C lua --strip-components=1
+check_sha256() {
+	local digest
+	if command -v sha256sum >/dev/null; then
+		digest=$(sha256sum "$1")
+	else
+		digest=$(shasum -a 256 "$1")
+	fi
+	[[ ${digest%% *} == "$2" ]]
+}
+
+download_lua() {
+	local archive=lua-$v_lua.tar.gz
+	local checksum=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+	local url
+
+	for url in \
+		"https://www.lua.org/ftp/$archive" \
+		"https://mirror.bazel.build/www.lua.org/ftp/$archive"
+	do
+		rm -f "$archive"
+		if $WGET "$url" -O "$archive" && check_sha256 "$archive" "$checksum"
+		then
+			rm -rf lua
+			mkdir lua
+			if tar -xz -C lua --strip-components=1 -f "$archive"; then
+				rm "$archive"
+				return 0
+			fi
+		fi
+	done
+
+	rm -rf lua "$archive"
+	return 1
+}
+
+if [ ! -f lua/src/lua.h ]; then
+	download_lua
 fi
 
 # shaderc is built from the NDK-provided sources; this placeholder keeps it in
