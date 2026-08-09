@@ -65,7 +65,7 @@ dep_mpv_android=(mpv)
 ## for CI workflow
 
 # CI resolves these movable branches to immutable commits before selecting a cache.
-v_ci_ffmpeg=release-8.1-fongmi
+v_ci_ffmpeg=release-9.0-fongmi
 v_ci_dav1d=master
 v_ci_libass=master
 v_ci_libplacebo=fongmi
