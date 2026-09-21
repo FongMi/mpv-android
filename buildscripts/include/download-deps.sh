@@ -156,6 +156,10 @@ if [ ! -f lua/src/lua.h ]; then
 	download_lua
 fi
 
+# shaderc is built from the NDK-provided sources; this placeholder keeps it in
+# the dependency graph without cloning an extra copy.
+mkdir -p shaderc
+
 # libplacebo
 if [ ! -d libplacebo ]; then
 	if [ "$IN_CI" -eq 1 ]; then
