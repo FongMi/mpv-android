@@ -1,11 +1,13 @@
 #!/bin/bash -e
 
 . ../../include/path.sh
+. ../../include/depinfo.sh
+. ../../include/cmake-android.sh
 
 if [ "$1" == "build" ]; then
 	true
 elif [ "$1" == "clean" ]; then
-	rm -rf _build$ndk_suffix
+	rm -rf _build$ndk_suffix _build_arcdav3a$ndk_suffix
 	exit 0
 else
 	exit 255
@@ -22,13 +24,28 @@ cpu=armv7-a
 cpuflags=
 [[ "$ndk_triple" == "arm"* ]] && cpuflags="$cpuflags -mfpu=neon -mcpu=cortex-a8"
 
+if ! grep -q -- "--enable-libarcdav3a" ../configure; then
+	echo "FFmpeg source does not contain libarcdav3a support. Update the pinned FFmpeg branch." >&2
+	exit 1
+fi
+
+av3a_source="../dependency/avs3a"
+av3a_build="../_build_arcdav3a$ndk_suffix"
+if [ ! -f "$av3a_source/CMakeLists.txt" ]; then
+	echo "FFmpeg source does not contain dependency/avs3a. Update the pinned FFmpeg branch." >&2
+	exit 1
+fi
+android_cmake_setup "$av3a_source" "$av3a_build" -DBUILD_SHARED_LIBS=OFF
+android_cmake_build "$av3a_build"
+android_cmake_install "$av3a_build"
+
 args=(
 	--target-os=android --enable-cross-compile
 	--cross-prefix=$ndk_triple- --cc=$CC --pkg-config=pkg-config --nm=llvm-nm
 	--arch=${ndk_triple%%-*} --cpu=$cpu
 	--extra-cflags="-I$prefix_dir/include $cpuflags" --extra-ldflags="-L$prefix_dir/lib"
 
-	--enable-{jni,mediacodec,mbedtls,libdav1d,libxml2} --disable-vulkan
+	--enable-{jni,mediacodec,mbedtls,libdav1d,libxml2,libarcdav3a} --disable-vulkan
 	--disable-static --enable-shared --enable-{gpl,version3}
 
 	# disable unneeded parts
