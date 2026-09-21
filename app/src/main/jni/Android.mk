@@ -71,12 +71,13 @@ LOCAL_CPPFLAGS  += -std=c++11
 LOCAL_SRC_FILES := \
 	main.cpp \
 	render.cpp \
+	request.cpp \
 	log.cpp \
 	jni_utils.cpp \
 	property.cpp \
 	event.cpp \
 	thumbnail.cpp
-LOCAL_LDLIBS    := -llog -latomic
+LOCAL_LDLIBS    := -llog
 LOCAL_SHARED_LIBRARIES := swscale avcodec mpv
 
 include $(BUILD_SHARED_LIBRARY)
