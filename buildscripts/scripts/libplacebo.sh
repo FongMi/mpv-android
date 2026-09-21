@@ -14,12 +14,37 @@ else
 fi
 
 unset CC CXX
-meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
-	-Dvulkan=disabled -Ddemos=false
+if [ ! -f "$prefix_dir/lib/libshaderc.a" ]; then
+	echo "shaderc dependency is missing: $prefix_dir/lib/libshaderc.a" >&2
+	exit 1
+fi
+export CFLAGS="-I$prefix_dir/include ${CFLAGS:-}"
+export CXXFLAGS="-I$prefix_dir/include ${CXXFLAGS:-}"
+export LDFLAGS="-L$prefix_dir/lib ${LDFLAGS:-}"
+meson setup "$build" --cross-file "$prefix_dir"/crossfile.txt \
+	-Dopengl=enabled -Dvulkan=enabled \
+	-Dshaderc=enabled -Dglslang=disabled \
+	-Ddemos=false
 
-ninja -C $build -j$cores
-DESTDIR="$prefix_dir" ninja -C $build install
+config_header="$build/src/include/libplacebo/config.h"
+for backend in OPENGL VULKAN; do
+	grep -Eq \
+		"^#define PL_HAVE_${backend} 1([[:space:]]|$)" \
+		"$config_header" || {
+		echo "libplacebo backend PL_HAVE_${backend}=1 is missing." >&2
+		exit 1
+	}
+done
 
-# add missing library for static linking
+ninja -C "$build" -j"$cores"
+DESTDIR="$prefix_dir" ninja -C "$build" install
+
+link_libs=()
+for lib in shaderc; do
+	[ -f "$prefix_dir/lib/lib${lib}.a" ] && link_libs+=("-l${lib}")
+done
+link_libs+=("-lc++")
+
+# add missing libraries for static linking
 # this isn't "-lstdc++" due to a meson bug: https://github.com/mesonbuild/meson/issues/11300
-${SED:-sed} '/^Libs:/ s|$| -lc++|' "$prefix_dir/lib/pkgconfig/libplacebo.pc" -i
+${SED:-sed} "/^Libs:/ s|$| ${link_libs[*]}|" "$prefix_dir/lib/pkgconfig/libplacebo.pc" -i
