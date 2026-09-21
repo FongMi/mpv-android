@@ -28,6 +28,10 @@ if ! grep -q -- "--enable-libarcdav3a" ../configure; then
 	echo "FFmpeg source does not contain libarcdav3a support. Update the pinned FFmpeg branch." >&2
 	exit 1
 fi
+if ! grep -q -- "--enable-libuavs3d" ../configure; then
+	echo "FFmpeg source does not contain libuavs3d support." >&2
+	exit 1
+fi
 
 av3a_source="../dependency/avs3a"
 av3a_build="../_build_arcdav3a$ndk_suffix"
@@ -45,7 +49,7 @@ args=(
 	--arch=${ndk_triple%%-*} --cpu=$cpu
 	--extra-cflags="-I$prefix_dir/include $cpuflags" --extra-ldflags="-L$prefix_dir/lib"
 
-	--enable-{jni,mediacodec,mbedtls,libdav1d,libxml2,libarcdav3a} --disable-vulkan
+	--enable-{jni,mediacodec,mbedtls,libdav1d,libxml2,libarcdav3a,libuavs3d} --disable-vulkan
 	--disable-static --enable-shared --enable-{gpl,version3}
 
 	# disable unneeded parts
