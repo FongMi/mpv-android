@@ -46,9 +46,9 @@ def main():
                 path.write_bytes(original)
 
         baseline = identity()
-        patches = root / "patches"
-        patches.mkdir(exist_ok=True)
         assert identity() == baseline
+        changed(root / "patches/libdvdnav-7.0.0-menu-availability.patch", baseline, True)
+        changed(root / "scripts/libdvdnav.sh", baseline, True)
         changed(root / "include/download-deps.sh", baseline, True)
         changed(root / "scripts/mpv.sh", baseline, False)
         changed(root / "scripts/mpv-android.sh", baseline, False)

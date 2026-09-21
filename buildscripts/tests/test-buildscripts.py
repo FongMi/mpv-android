@@ -67,6 +67,95 @@ class BuildscriptTests(unittest.TestCase):
         self.tool("pkg-config", "exit 0\n")
         return shlex.quote(script.as_posix()) + " -n --arch arm64"
 
+    def prepare_shaderc(self):
+        recipe = self.copy_source("scripts/shaderc.sh")
+        patch = self.copy_source("patches/shaderc-r30-validator-friendly-names.patch")
+        # A minimal real patch context, with fixture hashes replacing only the
+        # pinned production pre/post identities. Never mutate the installed NDK.
+        lines = patch.read_text().splitlines(keepends=True)
+        hunk = lines[next(i for i, line in enumerate(lines) if line.startswith("@@")) + 1:]
+        original = "".join(line[1:] for line in hunk if line.startswith((" ", "-")))
+        patched = "".join(line[1:] for line in hunk if line.startswith((" ", "+")))
+        text = recipe.read_text()
+        for name, value in (("original_sha", original), ("patched_sha", patched)):
+            text = re.sub(name + r"=[0-9a-f]{64}",
+                          name + "=" + hashlib.sha256(value.encode()).hexdigest(), text)
+        recipe.write_text(text)
+        base = "buildscripts/sdk/android-ndk-fixture"
+        source = base + "/sources/third_party/shaderc"
+        for name in ("Android.mk", "CHANGES", "libshaderc/source", "third_party/source", "utils/source"):
+            self.write(source + "/" + name, "source fixture\n")
+        wrapper = self.write(source + "/libshaderc_util/src/spirv_tools_wrapper.cc", original)
+        self.write(source + "/obj/shared-sentinel", "untouched\n")
+        self.write(source + "/libs/shared-sentinel", "untouched\n")
+        self.write(base + "/ndk-build", '#!/bin/bash -e\n'
+                   'echo "$2" >> "$TRACE_FILE"\n'
+                   '[ "${SHADERC_FAIL:-0}" = 0 ] || exit 17\n'
+                   '[ "${SHADERC_MISSING:-0}" = 0 ] || exit 0\n'
+                   'for arg in "$@"; do case "$arg" in APP_ABI=*) abi=${arg#APP_ABI=};; esac; done\n'
+                   'mkdir -p "$2/libs/c++_static/$abi" "$2/include/shaderc"\n'
+                   'printf "%s" "$abi" > "$2/libs/c++_static/$abi/libshaderc.a"\n'
+                   'echo header > "$2/include/shaderc/shaderc.h"\n', executable=True)
+        directory = self.root / "buildscripts/deps/shaderc"
+        directory.mkdir(parents=True)
+        return directory, wrapper
+
+    def shaderc(self, directory, arch="arm64", action="build"):
+        prefix = (self.root / "buildscripts/prefix" / arch).as_posix()
+        return self.run_shell("prefix_name=" + arch + " prefix_dir=" + shlex.quote(prefix)
+                              + " ../../scripts/shaderc.sh " + action, directory)
+
+    def test_shaderc_private_build_and_clean(self):
+        directory, wrapper = self.prepare_shaderc()
+        before = {p.relative_to(wrapper.parents[2]): p.read_bytes()
+                  for p in wrapper.parents[2].rglob("*") if p.is_file()}
+        for arch in ("arm64", "armv7l", "arm64"):
+            result = self.shaderc(directory, arch)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        private = directory / "_source_arm64-v8a"
+        self.assertFalse((private / "obj/shared-sentinel").exists())
+        self.assertFalse((private / "libs/shared-sentinel").exists())
+        self.assertEqual((private / "libshaderc_util/src/spirv_tools_wrapper.cc")
+                         .read_text().count("SetFriendlyNames(false)"), 1)
+        self.assertEqual(self.shaderc(directory, action="clean").returncode, 0)
+        self.assertFalse(private.exists())
+        self.assertTrue((directory / "_source_armeabi-v7a").is_dir())
+        self.assertFalse((self.root / "buildscripts/prefix/arm64/lib/libshaderc.a").exists())
+        self.assertEqual(before, {p.relative_to(wrapper.parents[2]): p.read_bytes()
+                                 for p in wrapper.parents[2].rglob("*") if p.is_file()})
+
+    def test_shaderc_source_drift_and_build_failures(self):
+        directory, wrapper = self.prepare_shaderc()
+        original = wrapper.read_bytes()
+        wrapper.write_bytes(original + b"drift\n")
+        result = self.shaderc(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pinned source", result.stderr)
+        self.assertEqual(self.trace(), [])
+        wrapper.write_bytes(original)
+        self.environment["SHADERC_FAIL"] = "1"
+        self.assertEqual(self.shaderc(directory).returncode, 17)
+        self.environment.pop("SHADERC_FAIL")
+        self.environment["SHADERC_MISSING"] = "1"
+        result = self.shaderc(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build output not found", result.stderr)
+        self.assertFalse((self.root / "buildscripts/prefix/arm64/lib/libshaderc.a").exists())
+        patch = self.root / "buildscripts/patches/shaderc-r30-validator-friendly-names.patch"
+        saved_patch = patch.read_text()
+        patch.write_text(saved_patch + "\nChanged patch identity\n")
+        before_calls = self.trace()
+        result = self.shaderc(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Private shaderc source identity changed", result.stderr)
+        self.assertEqual(self.trace(), before_calls)
+        patch.write_text(saved_patch)
+        private = directory / "_source_arm64-v8a/libshaderc_util/src/spirv_tools_wrapper.cc"
+        private.write_text(private.read_text() + "drift\n")
+        result = self.shaderc(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Private shaderc source identity changed", result.stderr)
+
     def test_recipe_failure(self):
         command = self.prepare_dispatcher()
         (self.root / "buildscripts/deps/failure").mkdir(parents=True)
@@ -97,6 +186,27 @@ class BuildscriptTests(unittest.TestCase):
         result = self.run_shell(command + " mpv-android")
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
         self.assertNotIn("Skipping Gradle APK build", result.stdout)
+
+    def test_patch_callers(self):
+        self.copy_source("include/patch-libbluray.sh")
+        patches = ("still-eof", "checked-seek", "menu-info", "bdj-pointer")
+        for name in patches:
+            self.write("buildscripts/patches/libbluray-1.4.1-" + name + ".patch", "fixture\n")
+        directory = self.root / "buildscripts/deps/libbluray"
+        directory.mkdir(parents=True)
+        self.tool("patch", 'case " $* " in *" --dry-run "*) exit 0 ;; esac\n'
+                  'if [ ! -f "$TRACE_FILE" ]; then\n'
+                  '    echo failed > "$TRACE_FILE"\n    exit 7\nfi\n'
+                  'echo continued >> "$TRACE_FILE"\n')
+        for caller, cwd in (("include/download-deps.sh", directory.parent),
+                            ("build-bdj-jars.sh", directory.parent.parent)):
+            with self.subTest(caller=caller):
+                (self.root / "trace.txt").unlink(missing_ok=True)
+                lines = (self.buildscripts / caller).read_text().splitlines()
+                command = next(line for line in lines if "include/patch-libbluray.sh" in line)
+                result = self.run_shell("source_dir=deps/libbluray\n" + command, cwd)
+                self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+                self.assertEqual(self.trace(), ["failed"])
 
     def test_ci_existing_ffmpeg_revision(self):
         source = (self.buildscripts / "include/download-deps.sh").read_text()
