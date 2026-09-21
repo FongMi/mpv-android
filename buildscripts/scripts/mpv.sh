@@ -56,6 +56,7 @@ git diff --quiet HEAD -- "$motion_core" "$motion_header" LICENSE.LGPL || {
 meson setup "$build" --cross-file "$prefix_dir"/crossfile.txt \
 	--default-library shared \
 	-Diconv=enabled -Duchardet=enabled \
+	-Dlibarchive=enabled \
 	-D{lua,libcurl}=enabled \
 	-Dlibmpv=true -Dcplayer=false \
 	-Dvulkan=enabled \

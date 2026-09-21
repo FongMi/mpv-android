@@ -117,6 +117,34 @@ if [ ! -d uchardet ]; then
 		tar -xz -C uchardet --strip-components=1
 fi
 
+# bzip2
+if [ ! -d bzip2 ]; then
+	mkdir bzip2
+	$WGET https://sourceware.org/pub/bzip2/bzip2-${v_bzip2}.tar.gz -O - | \
+		tar -xz -C bzip2 --strip-components=1
+fi
+
+# xz
+if [ ! -d xz ]; then
+	mkdir xz
+	$WGET https://github.com/tukaani-project/xz/releases/download/v${v_xz}/xz-${v_xz}.tar.xz -O - | \
+		tar -xJ -C xz --strip-components=1
+fi
+
+# zstd
+if [ ! -d zstd ]; then
+	mkdir zstd
+	$WGET https://github.com/facebook/zstd/releases/download/v${v_zstd}/zstd-${v_zstd}.tar.gz -O - | \
+		tar -xz -C zstd --strip-components=1
+fi
+
+# libarchive
+if [ ! -d libarchive ]; then
+	mkdir libarchive
+	$WGET https://github.com/libarchive/libarchive/releases/download/v${v_libarchive}/libarchive-${v_libarchive}.tar.xz -O - | \
+		tar -xJ -C libarchive --strip-components=1
+fi
+
 # libass
 if [ ! -d libass ]; then
 	if [ "$IN_CI" -eq 1 ]; then
@@ -131,10 +159,43 @@ if [ ! -d libass ]; then
 fi
 
 # lua
-if [ ! -d lua ]; then
-	mkdir lua
-	$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \
-		tar -xz -C lua --strip-components=1
+check_sha256() {
+	local digest
+	if command -v sha256sum >/dev/null; then
+		digest=$(sha256sum "$1")
+	else
+		digest=$(shasum -a 256 "$1")
+	fi
+	[[ ${digest%% *} == "$2" ]]
+}
+
+download_lua() {
+	local archive=lua-$v_lua.tar.gz
+	local checksum=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+	local url
+
+	for url in \
+		"https://www.lua.org/ftp/$archive" \
+		"https://mirror.bazel.build/www.lua.org/ftp/$archive"
+	do
+		rm -f "$archive"
+		if $WGET "$url" -O "$archive" && check_sha256 "$archive" "$checksum"
+		then
+			rm -rf lua
+			mkdir lua
+			if tar -xz -C lua --strip-components=1 -f "$archive"; then
+				rm "$archive"
+				return 0
+			fi
+		fi
+	done
+
+	rm -rf lua "$archive"
+	return 1
+}
+
+if [ ! -f lua/src/lua.h ]; then
+	download_lua
 fi
 
 # shaderc is built from the NDK-provided sources; this placeholder keeps it in
