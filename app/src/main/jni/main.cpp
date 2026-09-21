@@ -20,6 +20,7 @@ extern "C" {
 #include "event.h"
 #include "request.h"
 #include "globals.h"
+#include "stream.h"
 
 extern "C" {
     jni_func(void, create, jobject appctx);
@@ -119,6 +120,14 @@ jni_func(void, create, jobject appctx) {
     g_mpv = mpv_create();
     if (!g_mpv) {
         throw_java_exception(env, "context init failed");
+        return;
+    }
+
+    int stream_result = register_iso_stream(env, g_mpv);
+    if (stream_result < 0) {
+        destroy_mpv_context();
+        if (!env->ExceptionCheck())
+            throw_error_code(env, "register ISO stream", stream_result, NULL);
         return;
     }
 
