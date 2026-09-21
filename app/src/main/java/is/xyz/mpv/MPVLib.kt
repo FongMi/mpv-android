@@ -3,6 +3,8 @@ package `is`.xyz.mpv
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.Surface
+import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 
 // Wrapper for native library
 
@@ -14,6 +16,22 @@ object MPVLib {
             System.loadLibrary(lib)
         }
     }
+
+    interface Stream {
+        fun read(buffer: ByteBuffer): Int
+        fun seek(position: Long): Long
+        fun size(): Long
+        fun cancel()
+        fun close()
+    }
+
+    private val streams = ConcurrentHashMap<String, () -> Stream>()
+
+    fun registerStream(uri: String, factory: () -> Stream) { streams[uri] = factory }
+    fun unregisterStream(uri: String) { streams.remove(uri) }
+
+    @JvmStatic
+    fun openStream(uri: String): Stream? = streams[uri]?.invoke()
 
     external fun create(appctx: Context)
     external fun init()

@@ -70,6 +70,7 @@ LOCAL_CFLAGS    := -Werror
 LOCAL_CPPFLAGS  += -std=c++11
 LOCAL_SRC_FILES := \
 	main.cpp \
+	stream.cpp \
 	render.cpp \
 	request.cpp \
 	log.cpp \
