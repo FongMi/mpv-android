@@ -119,6 +119,14 @@ if [ ! -d fontconfig ]; then
 		tar -xz -C fontconfig --strip-components=1
 fi
 
+# libbluray
+if [ ! -d libbluray ]; then
+	mkdir libbluray
+	$WGET https://downloads.videolan.org/pub/videolan/libbluray/${v_libbluray}/libbluray-${v_libbluray}.tar.xz -O - | \
+		tar -xJ -C libbluray --strip-components=1
+fi
+../include/patch-libbluray.sh libbluray
+
 # libiconv
 if [ ! -d libiconv ]; then
 	mkdir libiconv
@@ -160,6 +168,47 @@ if [ ! -d libarchive ]; then
 	$WGET https://github.com/libarchive/libarchive/releases/download/v${v_libarchive}/libarchive-${v_libarchive}.tar.xz -O - | \
 		tar -xJ -C libarchive --strip-components=1
 fi
+
+# libdvdread
+if [ ! -d libdvdread ]; then
+	mkdir libdvdread
+	$WGET https://downloads.videolan.org/pub/videolan/libdvdread/${v_libdvdread}/libdvdread-${v_libdvdread}.tar.xz -O - | \
+		tar -xJ -C libdvdread --strip-components=1
+fi
+
+libdvdread_patch=../patches/libdvdread-7.0.1-iso9660.patch
+if patch --batch --forward --fuzz=0 --dry-run -d libdvdread -p1 < "$libdvdread_patch" >/dev/null 2>&1; then
+	patch --batch --forward --fuzz=0 -d libdvdread -p1 < "$libdvdread_patch"
+elif ! patch --batch --reverse --fuzz=0 --dry-run -d libdvdread -p1 < "$libdvdread_patch" >/dev/null 2>&1; then
+	echo "libdvdread source does not match $libdvdread_patch." >&2
+	exit 1
+fi
+
+# libdvdnav
+if [ ! -d libdvdnav ]; then
+	mkdir libdvdnav
+	$WGET https://downloads.videolan.org/pub/videolan/libdvdnav/${v_libdvdnav}/libdvdnav-${v_libdvdnav}.tar.xz -O - | \
+		tar -xJ -C libdvdnav --strip-components=1
+fi
+for libdvdnav_patch in ../patches/libdvdnav-7.0.0-go-up-hop.patch \
+	../patches/libdvdnav-7.0.0-pgc-cell-duration.patch \
+	../patches/libdvdnav-7.0.0-menu-availability.patch \
+	../patches/libdvdnav-7.0.0-vm-copy-failure.patch \
+	../patches/libdvdnav-7.0.0-time-search-floor.patch \
+	../patches/libdvdnav-7.0.0-menu-audio-count.patch \
+	../patches/libdvdnav-7.0.0-title-chapter-duration.patch \
+	../patches/libdvdnav-7.0.0-preserve-stream-callbacks.patch \
+	../patches/libdvdnav-7.0.0-active-logical-stream.patch \
+	../patches/libdvdnav-7.0.0-title-scope.patch \
+	../patches/libdvdnav-7.0.0-stream-attributes.patch \
+	../patches/libdvdnav-7.0.0-block-replay.patch; do
+	if patch --batch --forward --fuzz=0 --dry-run -d libdvdnav -p1 < "$libdvdnav_patch" >/dev/null 2>&1; then
+		patch --batch --forward --fuzz=0 -d libdvdnav -p1 < "$libdvdnav_patch"
+	elif ! patch --batch --reverse --fuzz=0 --dry-run -d libdvdnav -p1 < "$libdvdnav_patch" >/dev/null 2>&1; then
+		echo "libdvdnav source does not match $libdvdnav_patch." >&2
+		exit 1
+	fi
+done
 
 # rubberband
 if [ ! -d rubberband ]; then
