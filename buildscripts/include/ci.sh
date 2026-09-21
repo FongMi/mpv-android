@@ -111,7 +111,6 @@ if [[ "$1" == export || "$1" == install ]]; then
 	fi
 	# mpv and its JNI wrapper are rebuilt after restoring the dependency prefix.
 	prefix_recipe_manifest=$(
-		shopt -s nullglob
 		for recipe in buildall.sh include/*.sh patches/*.patch scripts/*.sh; do
 			case "$recipe" in
 				include/ci.sh|scripts/mpv.sh|scripts/mpv-android.sh) continue ;;
