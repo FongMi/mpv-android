@@ -18,5 +18,6 @@ unset CC CXX # meson wants these unset
 meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
 	-Dminimum=true -D{push,reader,sax1,iso8859x,pattern}=enabled
 
-ninja -C $build -j$cores
-DESTDIR="$prefix_dir" ninja -C $build install
+# The default target also builds the uninstalled testdso module.
+meson compile -C "$build" -j "$cores" xml2 xmllint
+DESTDIR="$prefix_dir" meson install -C "$build" --no-rebuild
