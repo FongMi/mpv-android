@@ -16,6 +16,7 @@ v_fribidi=1.0.17
 v_freetype=2.14.3
 v_mbedtls=3.6.7
 v_libxml2=2.15.4
+v_libaribcaption=1.1.1
 v_fontconfig=2.18.3
 v_curl=8.22.0
 v_libiconv=1.19
@@ -36,9 +37,10 @@ dep_zstd=()
 dep_mbedtls=()
 dep_dav1d=()
 dep_libxml2=()
-dep_uavs3d=()
-dep_ffmpeg=(mbedtls dav1d libxml2 uavs3d)
 dep_freetype2=()
+dep_libaribcaption=(freetype2)
+dep_uavs3d=()
+dep_ffmpeg=(mbedtls dav1d libxml2 libaribcaption uavs3d)
 dep_fontconfig=(libxml2 freetype2)
 dep_fribidi=()
 dep_harfbuzz=()
@@ -65,4 +67,4 @@ v_ci_libplacebo=fongmi
 v_ci_prefix=39
 
 # filename used to uniquely identify a build prefix
-ci_tarball="prefix-ndk-${v_ndk}-opengl-vulkan-shaderc-lua-${v_lua}-unibreak-${v_unibreak}-harfbuzz-${v_harfbuzz}-fribidi-${v_fribidi}-freetype-${v_freetype}-libxml2-${v_libxml2}-fontconfig-${v_fontconfig}-mbedtls-${v_mbedtls}-curl-${v_curl}-libiconv-${v_libiconv}-uchardet-${v_uchardet}-bzip2-${v_bzip2}-xz-${v_xz}-zstd-${v_zstd}-libarchive-${v_libarchive}-ffmpeg-${v_ci_ffmpeg}-prefix-${v_ci_prefix}.tgz"
+ci_tarball="prefix-ndk-${v_ndk}-opengl-vulkan-shaderc-lua-${v_lua}-unibreak-${v_unibreak}-harfbuzz-${v_harfbuzz}-fribidi-${v_fribidi}-freetype-${v_freetype}-libxml2-${v_libxml2}-libaribcaption-${v_libaribcaption}-fontconfig-${v_fontconfig}-mbedtls-${v_mbedtls}-curl-${v_curl}-libiconv-${v_libiconv}-uchardet-${v_uchardet}-bzip2-${v_bzip2}-xz-${v_xz}-zstd-${v_zstd}-libarchive-${v_libarchive}-ffmpeg-${v_ci_ffmpeg}-prefix-${v_ci_prefix}.tgz"
