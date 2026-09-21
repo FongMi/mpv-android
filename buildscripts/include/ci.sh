@@ -100,6 +100,7 @@ if [[ "$1" == export || "$1" == install ]]; then
 	export LIBPLACEBO_GIT_COMMIT
 	native_source_id=$(printf '%s\n' \
 		"ffmpeg=$FFMPEG_GIT_COMMIT" \
+		"uavs3d=$v_ci_uavs3d" \
 		"dav1d=$DAV1D_GIT_COMMIT" \
 		"libass=$LIBASS_GIT_COMMIT" \
 		"libplacebo=$LIBPLACEBO_GIT_COMMIT" | sha256sum)
@@ -136,6 +137,7 @@ fi
 if [ "$1" = "export" ]; then
 	# Export the exact native source revisions used by the cache and build steps.
 	echo "FFMPEG_GIT_COMMIT=$FFMPEG_GIT_COMMIT"
+	echo "UAVS3D_GIT_COMMIT=$v_ci_uavs3d"
 	echo "DAV1D_GIT_COMMIT=$DAV1D_GIT_COMMIT"
 	echo "LIBASS_GIT_COMMIT=$LIBASS_GIT_COMMIT"
 	echo "LIBPLACEBO_GIT_COMMIT=$LIBPLACEBO_GIT_COMMIT"
