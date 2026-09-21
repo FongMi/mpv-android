@@ -40,6 +40,25 @@ To do this run one (or more) of these commands **before** ./buildall.sh:
 
 # Developing
 
+## CI
+
+The `fongmi` branch is packaged in `FongMi/mpv-android` for
+`armeabi-v7a` and `arm64-v8a`, using the source from `FongMi/mpv`.
+
+The Android workflow checks out `FongMi/mpv` before building dependencies;
+checkout credentials are removed after fetching the source.
+Builds run only through `workflow_dispatch`. Manual runs can select an mpv
+branch, tag, or full commit with `mpv_ref` (default: `fongmi`). The resolved
+mpv commit is recorded in the log and workflow summary.
+
+Manual runs can pin FFmpeg with `ffmpeg_commit`; otherwise CI resolves
+`FongMi/FFmpeg`'s `release-9.0-fongmi` branch once and uses that commit for both
+the dependency cache and native build.
+
+Local builds use `FongMi/mpv` by default.
+`MPV_GIT_URL` and `MPV_GIT_REF` remain available for selecting another repository
+and branch.
+
 ## Getting logs
 
 ```sh

@@ -7,6 +7,31 @@
 
 mkdir -p deps && cd deps
 
+clone_ci_commit() {
+	local repository=$1
+	local expected_commit=$2
+	local directory=$3
+	local clone_mode=${4:-}
+
+	if ! (
+		set -e
+		git init -q "$directory"
+		git -C "$directory" remote add origin "$repository"
+		git -C "$directory" fetch -q --depth=1 origin "$expected_commit"
+		git -C "$directory" checkout -q --detach FETCH_HEAD
+		if [[ "$clone_mode" == recursive ]]; then
+			git -C "$directory" submodule update -q \
+				--init --recursive --depth=1
+		fi
+		[[ $(git -C "$directory" rev-parse --verify 'HEAD^{commit}') == \
+			"$expected_commit" ]]
+	); then
+		echo "Failed to check out $repository commit $expected_commit." >&2
+		rm -rf "$directory"
+		return 1
+	fi
+}
+
 # mbedtls
 if [ ! -d mbedtls ]; then
 	mkdir mbedtls
@@ -15,13 +40,29 @@ if [ ! -d mbedtls ]; then
 fi
 
 # dav1d
-[ ! -d dav1d ] && git clone https://github.com/videolan/dav1d
+if [ ! -d dav1d ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${DAV1D_GIT_COMMIT:?DAV1D_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${DAV1D_GIT_URL:-https://github.com/videolan/dav1d}" \
+			"$DAV1D_GIT_COMMIT" dav1d
+	else
+		git clone --branch "$v_ci_dav1d" \
+			"${DAV1D_GIT_URL:-https://github.com/videolan/dav1d}" dav1d
+	fi
+fi
 
 # ffmpeg
 if [ ! -d ffmpeg ]; then
-	args=()
-	[ $IN_CI -eq 1 ] && args+=(--depth=1 -b "$v_ci_ffmpeg")
-	git clone https://github.com/FFmpeg/FFmpeg ffmpeg "${args[@]}"
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${FFMPEG_GIT_COMMIT:?FFMPEG_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${FFMPEG_GIT_URL:-https://github.com/FongMi/FFmpeg.git}" \
+			"$FFMPEG_GIT_COMMIT" ffmpeg
+	else
+		git clone --branch "$v_ci_ffmpeg" \
+			"${FFMPEG_GIT_URL:-https://github.com/FongMi/FFmpeg.git}" ffmpeg
+	fi
 fi
 
 # freetype2
@@ -63,17 +104,70 @@ if [ ! -d fontconfig ]; then
 fi
 
 # libass
-[ ! -d libass ] && git clone https://github.com/libass/libass
+if [ ! -d libass ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${LIBASS_GIT_COMMIT:?LIBASS_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" \
+			"$LIBASS_GIT_COMMIT" libass
+	else
+		git clone --branch "$v_ci_libass" \
+			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" libass
+	fi
+fi
 
 # lua
-if [ ! -d lua ]; then
-	mkdir lua
-	$WGET https://www.lua.org/ftp/lua-$v_lua.tar.gz -O - | \
-		tar -xz -C lua --strip-components=1
+check_sha256() {
+	local digest
+	if command -v sha256sum >/dev/null; then
+		digest=$(sha256sum "$1")
+	else
+		digest=$(shasum -a 256 "$1")
+	fi
+	[[ ${digest%% *} == "$2" ]]
+}
+
+download_lua() {
+	local archive=lua-$v_lua.tar.gz
+	local checksum=b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b
+	local url
+
+	for url in \
+		"https://www.lua.org/ftp/$archive" \
+		"https://mirror.bazel.build/www.lua.org/ftp/$archive"
+	do
+		rm -f "$archive"
+		if $WGET "$url" -O "$archive" && check_sha256 "$archive" "$checksum"
+		then
+			rm -rf lua
+			mkdir lua
+			if tar -xz -C lua --strip-components=1 -f "$archive"; then
+				rm "$archive"
+				return 0
+			fi
+		fi
+	done
+
+	rm -rf lua "$archive"
+	return 1
+}
+
+if [ ! -f lua/src/lua.h ]; then
+	download_lua
 fi
 
 # libplacebo
-[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo
+if [ ! -d libplacebo ]; then
+	if [ "$IN_CI" -eq 1 ]; then
+		: "${LIBPLACEBO_GIT_COMMIT:?LIBPLACEBO_GIT_COMMIT must be set in CI}"
+		clone_ci_commit \
+			"${LIBPLACEBO_GIT_URL:-https://github.com/FongMi/libplacebo.git}" \
+			"$LIBPLACEBO_GIT_COMMIT" libplacebo recursive
+	else
+		git clone --recursive --branch "$v_ci_libplacebo" \
+			"${LIBPLACEBO_GIT_URL:-https://github.com/FongMi/libplacebo.git}" libplacebo
+	fi
+fi
 
 # curl
 if [ ! -d curl ]; then
@@ -83,6 +177,13 @@ if [ ! -d curl ]; then
 fi
 
 # mpv
-[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv
+: "${MPV_GIT_URL:=https://github.com/FongMi/mpv.git}"
+if [ ! -d mpv ]; then
+	if [ -n "$MPV_GIT_REF" ]; then
+		git clone --branch "$MPV_GIT_REF" "$MPV_GIT_URL" mpv
+	else
+		git clone "$MPV_GIT_URL" mpv
+	fi
+fi
 
 cd ..

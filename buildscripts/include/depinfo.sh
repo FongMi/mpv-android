@@ -41,8 +41,13 @@ dep_mpv_android=(mpv)
 
 ## for CI workflow
 
-# pinned ffmpeg revision
-v_ci_ffmpeg=n9.0
+# CI resolves these movable branches to immutable commits before selecting a cache.
+v_ci_ffmpeg=release-9.0-fongmi
+v_ci_dav1d=master
+v_ci_libass=master
+v_ci_libplacebo=fongmi
+# bump when the prefix build recipe changes without a dependency version change
+v_ci_prefix=39
 
 # filename used to uniquely identify a build prefix
-ci_tarball="prefix-n${v_ndk}-l${v_lua}-u${v_unibreak}-h${v_harfbuzz}-fr${v_fribidi}-ft${v_freetype}-x${v_libxml2}-fo${v_fontconfig}-m${v_mbedtls}-c${v_curl}-ff${v_ci_ffmpeg}.tgz"
+ci_tarball="prefix-ndk-${v_ndk}-lua-${v_lua}-unibreak-${v_unibreak}-harfbuzz-${v_harfbuzz}-fribidi-${v_fribidi}-freetype-${v_freetype}-libxml2-${v_libxml2}-fontconfig-${v_fontconfig}-mbedtls-${v_mbedtls}-curl-${v_curl}-ffmpeg-${v_ci_ffmpeg}-prefix-${v_ci_prefix}.tgz"
