@@ -65,6 +65,15 @@ if [ ! -d ffmpeg ]; then
 	fi
 fi
 
+# AVS3 baseline decoder. Keep the checked-out revision fixed across both Android ABIs.
+if [ ! -d uavs3d ]; then
+	clone_ci_commit https://github.com/uavs3/uavs3d.git "$v_ci_uavs3d" uavs3d
+fi
+if [ "$(git -C uavs3d rev-parse HEAD)" != "$v_ci_uavs3d" ]; then
+	echo "uavs3d source revision does not match the pinned build dependency." >&2
+	exit 1
+fi
+
 # freetype2
 [ ! -d freetype2 ] && git clone --recurse-submodules https://gitlab.freedesktop.org/freetype/freetype.git freetype2 -b VER-${v_freetype//./-}
 
