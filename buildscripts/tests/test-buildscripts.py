@@ -2,6 +2,7 @@
 """Check buildscript failure propagation and install-tool selection on the host."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -27,7 +28,7 @@ class BuildscriptTests(unittest.TestCase):
         self.bin.mkdir()
         self.copy_source("include/path.sh")
         self.write("buildscripts/include/depinfo.sh",
-                   "v_ndk=fixture\nv_ndk_n=fixture\ndep_failure=()\n"
+                   "v_ndk=fixture\nv_ndk_n=30.0.16248370\ndep_failure=()\n"
                    "dep_mpv_android=()\nv_ci_uavs3d=" + "1" * 40 + "\n")
 
     def write(self, name, text, executable=False):
@@ -200,6 +201,420 @@ class BuildscriptTests(unittest.TestCase):
             self.assertEqual((saved_submodule / "source.c").read_text(), "first\n")
         finally:
             saved_submodule.rename(submodule)
+
+    @staticmethod
+    def header_digest(prefix):
+        base = prefix / "include"
+        rows = []
+        for path in sorted((base / "libplacebo").rglob("*")):
+            if path.is_file():
+                rows.append(hashlib.sha256(path.read_bytes()).hexdigest() + "  "
+                            + path.relative_to(base).as_posix() + "\n")
+        return hashlib.sha256("".join(rows).encode()).hexdigest()
+
+    def update_lp_receipt(self, arch):
+        prefix = self.root / "buildscripts/prefix" / arch
+        receipt = prefix / "share/mpv-motion/provenance.properties"
+        lines = [line for line in receipt.read_text().splitlines()
+                 if not line.startswith("libplacebo.")]
+        lines.extend(["libplacebo.archive.sha256="
+                      + hashlib.sha256((prefix / "lib/libplacebo.a").read_bytes()).hexdigest(),
+                      "libplacebo.headers.sha256=" + self.header_digest(prefix)])
+        receipt.write_text("\n".join(lines) + "\n")
+
+    def prepare_sdk(self):
+        self.copy_source("export-renderer-sdk.sh")
+        headers = {"config.h": "#define PL_API_VER 1\n#define PL_HAVE_OPENGL 1\n"
+                   "#define PL_HAVE_VULKAN 1\n#define PL_HAVE_SHADERC 1\n",
+                   "opengl.h": "bool external_yuv;\n",
+                   "vulkan.h": "bool disable_storage;\nstruct pl_vulkan_ycbcr_params {\n"
+                   "const struct pl_vulkan_ycbcr_params *ycbcr;\n",
+                   "utils/libav.h": "pl_map_avframe_dovi_metadata(\n",
+                   "renderer.h": "".join("#define PL_HAVE_" + name + " 1\n" for name in
+                       ("CUSTOM_FRAME_MIXER", "SOURCE_PEAK_TIMELINE", "SOURCE_PEAK_IMAGE",
+                        "SOURCE_HOOK_PARAMETERS")),
+                   "colorspace.h": "#define PL_HAVE_HDR_LINEAR 1\n"}
+        for arch in ("armv7l", "arm64"):
+            prefix = "buildscripts/prefix/" + arch
+            for name, text in headers.items():
+                self.write(prefix + "/include/libplacebo/" + name, text)
+            for name in ("libplacebo.a", "libshaderc.a", "libmpv-motion.a"):
+                self.write(prefix + "/lib/" + name, "fixture\n")
+        self.write("buildscripts/prefix/arm64/share/licenses/libplacebo/LICENSE", "license\n")
+        core = "buildscripts/deps/mpv/"
+        self.write(core + "video/out/gpu_next/motion.c", "motion source\n")
+        self.write(core + "video/out/gpu_next/motion.h", "enum mp_motion_result mp_motion_render_views(\n")
+        self.write(core + "LICENSE.LGPL", "motion license\n")
+        for arch in ("armv7l", "arm64"):
+            self.write("buildscripts/prefix/" + arch + "/include/mpv-motion/motion.h",
+                       "enum mp_motion_result mp_motion_render_views(\n")
+            self.write("buildscripts/prefix/" + arch + "/share/mpv-motion/provenance.properties",
+                       "schema.version=1\nmpv-motion.arch=" + arch + "\nmpv-motion.commit=" + "1" * 40 + "\n"
+                       + "".join("mpv-motion." + field + ".sha256="
+                                 + hashlib.sha256(content).hexdigest() + "\n"
+                                 for field, content in (("source", b"motion source\n"),
+                                                        ("header", b"enum mp_motion_result mp_motion_render_views(\n"),
+                                                        ("archive", b"fixture\n"))))
+        for arch in ("armv7l", "arm64"):
+            self.update_lp_receipt(arch)
+        # Fake archive/symbol output tests export decisions, not native linkage.
+        self.write("buildscripts/sdk/android-ndk-fixture/toolchains/llvm/prebuilt/fixture/bin/llvm-nm",
+                   '#!/bin/bash -e\necho "mp_motion_render_views T 0 1"\n', executable=True)
+        self.tool("git", 'case "$3" in\n'
+                  'rev-parse) echo ' + "1" * 40 + ';;\n'
+                  'remote) echo https://example.invalid/mpv.git;;\n'
+                  'diff|cat-file) exit 0;;\n'
+                  '*) exit 2;;\nesac\n')
+        return "buildscripts/export-renderer-sdk.sh"
+
+    def test_sdk_export_failure(self):
+        self.prepare_sdk()
+        self.tool("cp", 'echo copy >> "$TRACE_FILE"\nexit 7\n')
+        workflow = (self.buildscripts.parent / ".github/workflows/build.yml").read_text()
+        match = re.search(r"(?m)^\s*- name: Export renderer SDK\s*\n\s*run: (.+)$", workflow)
+        self.assertIsNotNone(match)
+        assert (self.root / "build/renderer-sdk").resolve().is_relative_to(self.root)
+        result = self.run_shell(match.group(1))
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertEqual(self.trace(), ["copy"])
+        self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def test_sdk_export_motion_provenance_and_manifests(self):
+        command = self.prepare_sdk()
+        result = self.run_shell(command)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.root / "build/renderer-sdk"
+        properties = dict(line.split("=", 1) for line in
+                          (output / "provenance.properties").read_text().splitlines())
+        self.assertEqual(properties["schema.version"], "3")
+        self.assertEqual(properties["android.ndk.version"], "30.0.16248370")
+        self.assertEqual(properties["renderer-sdk.library.path"], "lib/libplacebo.a")
+        self.assertEqual(properties["mpv-motion.commit"], "1" * 40)
+        self.assertEqual(properties["mpv-motion.repository"], "https://example.invalid/mpv.git")
+        for field, content in (("source", b"motion source\n"),
+                               ("header", b"enum mp_motion_result mp_motion_render_views(\n")):
+            self.assertEqual(properties["mpv-motion." + field + ".sha256"],
+                             hashlib.sha256(content).hexdigest())
+        self.assertEqual((output / "LICENSE.mpv-motion").read_text(), "motion license\n")
+        manifest = (output / "files.sha256").read_text()
+        for abi in ("armeabi-v7a", "arm64-v8a"):
+            self.assertIn("./" + abi + "/lib/libmpv-motion.a", manifest)
+            self.assertIn("./" + abi + "/include/mpv-motion/motion.h", manifest)
+            self.assertIn("./" + abi + "/motion-build.properties", manifest)
+            # Preserve the existing libplacebo-only header contract.
+            self.assertNotIn("mpv-motion", (output / abi / "headers.sha256").read_text())
+        self.assertIn("./LICENSE.mpv-motion", manifest)
+        checked = self.run_shell("sha256sum -c files.sha256", output)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_sdk_export_rejects_missing_motion_components(self):
+        command = self.prepare_sdk()
+        paths = ["buildscripts/deps/mpv/LICENSE.LGPL",
+                 "buildscripts/deps/mpv/video/out/gpu_next/motion.c",
+                 "buildscripts/deps/mpv/video/out/gpu_next/motion.h"]
+        for arch in ("armv7l", "arm64"):
+            paths.extend(["buildscripts/prefix/" + arch + "/lib/libmpv-motion.a",
+                          "buildscripts/prefix/" + arch + "/include/mpv-motion/motion.h",
+                          "buildscripts/prefix/" + arch + "/share/mpv-motion/provenance.properties"])
+        for name in paths:
+            with self.subTest(component=name):
+                path = self.root / name
+                original = path.read_bytes()
+                path.unlink()
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("missing", result.stderr)
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_header_drift_and_abi_api_mismatch(self):
+        command = self.prepare_sdk()
+        for name, replacement, error in (
+                ("include/mpv-motion/motion.h", "stale header\n", "Installed motion header"),
+                ("include/libplacebo/config.h", "#define PL_API_VER 2\n", "API differs"),
+                ("include/libplacebo/opengl.h", "", "renderer capability")):
+            with self.subTest(component=name):
+                path = self.root / "buildscripts/prefix/arm64" / name
+                original = path.read_bytes()
+                path.write_text(replacement)
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stderr)
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_stale_build_receipt(self):
+        command = self.prepare_sdk()
+        result = self.run_shell(command)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name, content, field in (
+                ("buildscripts/deps/mpv/video/out/gpu_next/motion.c",
+                 b"new committed core with unchanged header\n", "source.sha256"),
+                ("buildscripts/prefix/arm64/lib/libmpv-motion.a",
+                 b"replaced archive\n", "archive.sha256"),
+                ("buildscripts/prefix/arm64/share/mpv-motion/provenance.properties",
+                 b"schema.version=1\nmpv-motion.arch=arm64\nmpv-motion.commit=" + b"2" * 40 + b"\n", "commit")):
+            with self.subTest(field=field):
+                path = self.root / name
+                original = path.read_bytes()
+                path.write_bytes(content)
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("build receipt mismatch", result.stderr)
+                    self.assertIn(field, result.stderr)
+                    self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_archive_and_receipt_from_other_abi(self):
+        command = self.prepare_sdk()
+        prefix = self.root / "buildscripts/prefix"
+        for name in ("lib/libmpv-motion.a", "share/mpv-motion/provenance.properties"):
+            (prefix / "arm64" / name).write_bytes((prefix / "armv7l" / name).read_bytes())
+        result = self.run_shell(command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build receipt mismatch for arm64-v8a: mpv-motion.arch", result.stderr)
+        self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def test_sdk_export_requires_new_capabilities(self):
+        command = self.prepare_sdk()
+        for arch in ("armv7l", "arm64"):
+            for capability in ("CUSTOM_FRAME_MIXER", "SOURCE_PEAK_TIMELINE", "SOURCE_PEAK_IMAGE",
+                               "SOURCE_HOOK_PARAMETERS", "HDR_LINEAR"):
+                header = "colorspace.h" if capability == "HDR_LINEAR" else "renderer.h"
+                path = self.root / "buildscripts/prefix" / arch / "include/libplacebo" / header
+                original = path.read_bytes()
+                needle = ("#define PL_HAVE_" + capability + " 1\n").encode()
+                for replacement in (b"", needle.replace(b" 1", b" 0")):
+                    with self.subTest(arch=arch, capability=capability, replacement=replacement):
+                        path.write_bytes(original.replace(needle, replacement))
+                        try:
+                            result = self.run_shell(command)
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertIn("PL_HAVE_" + capability, result.stderr)
+                        finally:
+                            path.write_bytes(original)
+
+    def test_sdk_export_binds_libplacebo_content_not_mtime(self):
+        command = self.prepare_sdk()
+        for arch in ("armv7l", "arm64"):
+            prefix = self.root / "buildscripts/prefix" / arch
+            for relative in ("lib/libplacebo.a", "include/libplacebo/renderer.h"):
+                path = prefix / relative
+                original = path.read_bytes()
+                stamp = path.stat()
+                # Headers remain valid while contents change with equal size/mtime.
+                changed = (original[:-1] + b" ")
+                path.write_bytes(changed)
+                os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("libplacebo.", result.stderr)
+                    self.assertIn("build receipt mismatch", result.stderr)
+                finally:
+                    path.write_bytes(original)
+                    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            receipt = prefix / "share/mpv-motion/provenance.properties"
+            original = receipt.read_bytes()
+            for field in ("libplacebo.archive.sha256", "libplacebo.headers.sha256"):
+                receipt.write_bytes(b"\n".join(line for line in original.split(b"\n")
+                                               if not line.startswith(field.encode() + b"=")))
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(field, result.stderr)
+                finally:
+                    receipt.write_bytes(original)
+
+    def test_sdk_export_requires_motion_view_declaration(self):
+        command = self.prepare_sdk()
+        # Keep the source/install comparison valid; reject the missing API itself.
+        for name in ("buildscripts/deps/mpv/video/out/gpu_next/motion.h",
+                     "buildscripts/prefix/armv7l/include/mpv-motion/motion.h",
+                     "buildscripts/prefix/arm64/include/mpv-motion/motion.h"):
+            self.write(name, "legacy motion header\n")
+        result = self.run_shell(command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("header is missing mp_motion_render_views", result.stderr)
+        self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def test_sdk_export_requires_defined_motion_view_symbol(self):
+        command = self.prepare_sdk()
+        name = "buildscripts/sdk/android-ndk-fixture/toolchains/llvm/prebuilt/fixture/bin/llvm-nm"
+        for body in ('echo "mp_motion_render_views U"\n',
+                     'echo "mp_motion_render_views_other T 0 1"\n',
+                     'printf "mp_motion_render_views T 0 1\\nmp_motion_render_views T 0 1\\n"\n',
+                     'exit 7\n'):
+            with self.subTest(nm=body):
+                self.write(name, "#!/bin/bash -e\n" + body, executable=True)
+                result = self.run_shell(command)
+                self.assertNotEqual(result.returncode, 0)
+                if body.startswith("exit"):
+                    self.assertEqual(result.returncode, 7)
+                else:
+                    self.assertIn("archive must define mp_motion_render_views once", result.stderr)
+                self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def prepare_motion_build(self):
+        self.copy_source("scripts/mpv.sh")
+        prefix = self.root / "buildscripts/prefix/arm64"
+        self.environment.update(prefix_dir=prefix.as_posix(), prefix_name="arm64",
+                                ndk_suffix="_fixture")
+        for name in ("include/iconv.h", "lib/libiconv.a", "lib/libcharset.a"):
+            self.write("buildscripts/prefix/arm64/" + name, "fixture\n")
+        self.write("buildscripts/prefix/arm64/lib/libplacebo.a", "LP archive fixture\n")
+        self.write("buildscripts/prefix/arm64/include/libplacebo/renderer.h", "LP header fixture\n")
+        core = "buildscripts/deps/mpv/"
+        self.write(core + "meson.build", "# fixture\n")
+        self.write(core + "video/out/gpu_next/motion.c", "motion source\n")
+        self.write(core + "video/out/gpu_next/motion.h", "enum mp_motion_result mp_motion_render_views(\n")
+        self.write(core + "LICENSE.LGPL", "motion license\n")
+        self.write(core + "_build_fixture/libmpv.so", "shared library fixture\n")
+        self.tool("git", 'case "$1" in\nrev-parse) echo ' + "1" * 40
+                  + ';;\ndiff) exit 0;;\n*) exit 2;;\nesac\n')
+        self.tool("meson", "exit 0\n")
+        install = ('case " $* " in *" install "*)\n'
+                   'mkdir -p "$prefix_dir/lib" "$prefix_dir/include/mpv-motion"\n'
+                   'cp video/out/gpu_next/motion.h "$prefix_dir/include/mpv-motion/"\n'
+                   'echo fixture > "$prefix_dir/lib/libmpv-motion.a";;\nesac\n')
+        self.tool("ninja", install)
+        return self.root / core, prefix / "share/mpv-motion/provenance.properties", install
+
+    def test_motion_build_records_installed_archive(self):
+        directory, receipt, _ = self.prepare_motion_build()
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        properties = dict(line.split("=", 1) for line in receipt.read_text().splitlines())
+        self.assertEqual(properties["mpv-motion.commit"], "1" * 40)
+        self.assertEqual(properties["mpv-motion.arch"], "arm64")
+        prefix = receipt.parents[2]
+        self.assertEqual(properties["libplacebo.headers.sha256"], self.header_digest(prefix))
+        self.assertEqual(properties["libplacebo.archive.sha256"],
+                         hashlib.sha256((prefix / "lib/libplacebo.a").read_bytes()).hexdigest())
+        for field, content in (("source", b"motion source\n"),
+                               ("header", b"enum mp_motion_result mp_motion_render_views(\n"), ("archive", b"fixture\n")):
+            self.assertEqual(properties["mpv-motion." + field + ".sha256"],
+                             hashlib.sha256(content).hexdigest())
+
+    def test_motion_build_rejects_changed_libplacebo_inputs(self):
+        directory, receipt, install = self.prepare_motion_build()
+        for relative in ("lib/libplacebo.a", "include/libplacebo/renderer.h"):
+            with self.subTest(component=relative):
+                receipt.parent.mkdir(parents=True, exist_ok=True)
+                receipt.write_text("old receipt\n")
+                self.tool("ninja", install + 'echo changed >> "$prefix_dir/' + relative + '"\n')
+                result = self.run_shell("../../scripts/mpv.sh build", directory)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("libplacebo inputs changed", result.stderr)
+                self.assertFalse(receipt.exists())
+
+    def test_motion_build_failure_or_source_change_invalidates_receipt(self):
+        directory, receipt, install = self.prepare_motion_build()
+        for body in ("exit 7\n", install + "exit 7\n",
+                     install + "echo changed >> video/out/gpu_next/motion.c\n"):
+            with self.subTest(ninja=body):
+                receipt.parent.mkdir(parents=True, exist_ok=True)
+                receipt.write_text("old receipt\n")
+                self.tool("ninja", body)
+                result = self.run_shell("../../scripts/mpv.sh build", directory)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(receipt.exists())
+
+    def test_motion_build_missing_shared_library_fails_without_rebuild(self):
+        directory, receipt, install = self.prepare_motion_build()
+        (directory / "_build_fixture/libmpv.so").unlink()
+        self.write("buildscripts/deps/mpv/_build_fixture/libmpv.a", "static fixture\n")
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text("stale receipt\n")
+        self.tool("meson", 'echo meson >> "$TRACE_FILE"\n')
+        self.tool("ninja", 'echo ninja >> "$TRACE_FILE"\n' + install)
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required shared libmpv", result.stderr)
+        self.assertEqual(self.trace(), ["meson", "ninja"])
+        self.assertFalse(receipt.exists())
+        self.assertTrue((directory / "_build_fixture/libmpv.a").is_file())
+
+    def test_motion_build_shared_output_ignores_stale_static_archive(self):
+        directory, receipt, install = self.prepare_motion_build()
+        self.write("buildscripts/deps/mpv/_build_fixture/libmpv.a", "stale static fixture\n")
+        self.tool("meson", 'echo meson >> "$TRACE_FILE"\n')
+        self.tool("ninja", 'echo ninja >> "$TRACE_FILE"\n' + install)
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.trace(), ["meson", "ninja", "ninja"])
+        self.assertTrue(receipt.is_file())
+
+    def test_sdk_export_rejects_unresolved_provenance(self):
+        command = self.prepare_sdk()
+        for stage, error in (("rev-parse", "resolved mpv commit"),
+                             ("cat-file", "absent from its commit")):
+            with self.subTest(stage=stage):
+                self.tool("git", 'case "$3" in\n'
+                          'rev-parse) echo ' + ("unknown" if stage == "rev-parse"
+                                                else "1" * 40) + ';;\n'
+                          'cat-file) exit 1;;\n'
+                          '*) exit 2;;\nesac\n')
+                result = self.run_shell(command)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+
+    def test_sdk_export_rejects_dirty_motion_source(self):
+        command = self.prepare_sdk()
+        self.tool("git", 'case "$3" in\n'
+                  'rev-parse) echo ' + "1" * 40 + ';;\n'
+                  'remote) echo https://example.invalid/mpv.git;;\n'
+                  'cat-file) exit 0;;\n'
+                  'diff) exit 1;;\n'
+                  '*) exit 2;;\nesac\n')
+        result = self.run_shell(command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("differs from its source commit", result.stderr)
+
+    def check_installers(self, selected):
+        real_install = subprocess.check_output([self.bash, "-c", "command -v install"],
+                                               text=True, encoding="utf-8").strip()
+        self.environment["REAL_INSTALL"] = real_install
+        self.environment["INSTALL"] = "ginstall" if selected else ""
+        body = 'echo %s >> "$TRACE_FILE"\nexec "$REAL_INSTALL" "$@"\n'
+        self.tool("ginstall", body % "ginstall")
+        self.tool("install", 'exit 99\n' if selected else body % "install")
+        for name in ("meson", "ninja", "cmake"):
+            self.tool(name, "exit 0\n")
+        self.tool("git", "echo " + "1" * 40 + "\n")
+        self.copy_source("include/cmake-android.sh")
+        prefix = self.root / "buildscripts/prefix/arm64"
+        self.environment.update(prefix_dir=prefix.as_posix(), prefix_name="arm64",
+                                ndk_suffix="_fixture")
+        self.write("buildscripts/prefix/arm64/lib/libshaderc.a", "fixture\n")
+        for recipe, license_name in (("libplacebo", "LICENSE"),):
+            with self.subTest(recipe=recipe):
+                (self.root / "trace.txt").unlink(missing_ok=True)
+                self.copy_source("scripts/" + recipe + ".sh")
+                base = "buildscripts/deps/" + recipe
+                self.write(base + "/" + license_name, "license\n")
+                self.write(base + "/_build_fixture/src/include/libplacebo/config.h",
+                           "#define PL_HAVE_OPENGL 1\n#define PL_HAVE_VULKAN 1\n")
+                self.write("buildscripts/prefix/arm64/lib/pkgconfig/" + recipe + ".pc", "Libs:\n")
+                command = "../../scripts/" + recipe + ".sh build"
+                result = self.run_shell(command, self.root / base)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.trace(), ["ginstall" if selected else "install"])
+                target = prefix / "share/licenses" / recipe / license_name
+                self.assertEqual(target.read_text(), "license\n")
+                if os.name != "nt":
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
+    def test_selected_installers(self):
+        self.check_installers(selected=True)
+
+    def test_fallback_installers(self):
+        self.check_installers(selected=False)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
