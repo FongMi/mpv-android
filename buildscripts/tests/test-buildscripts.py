@@ -138,7 +138,7 @@ class BuildscriptTests(unittest.TestCase):
         self.environment.update(prefix_dir=prefix.as_posix(), prefix_name="arm64",
                                 ndk_suffix="_fixture")
         self.write("buildscripts/prefix/arm64/lib/libshaderc.a", "fixture\n")
-        for recipe, license_name in (("libplacebo", "LICENSE"),):
+        for recipe, license_name in (("libplacebo", "LICENSE"), ("uavs3d", "COPYING")):
             with self.subTest(recipe=recipe):
                 (self.root / "trace.txt").unlink(missing_ok=True)
                 self.copy_source("scripts/" + recipe + ".sh")

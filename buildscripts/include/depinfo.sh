@@ -36,7 +36,8 @@ dep_zstd=()
 dep_mbedtls=()
 dep_dav1d=()
 dep_libxml2=()
-dep_ffmpeg=(mbedtls dav1d libxml2)
+dep_uavs3d=()
+dep_ffmpeg=(mbedtls dav1d libxml2 uavs3d)
 dep_freetype2=()
 dep_fontconfig=(libxml2 freetype2)
 dep_fribidi=()
@@ -56,6 +57,7 @@ dep_mpv_android=(mpv)
 
 # CI resolves these movable branches to immutable commits before selecting a cache.
 v_ci_ffmpeg=release-9.0-fongmi
+v_ci_uavs3d=e72f7c34be2f4de725c1ae498e8c4f3559e99b5b
 v_ci_dav1d=master
 v_ci_libass=master
 v_ci_libplacebo=fongmi
