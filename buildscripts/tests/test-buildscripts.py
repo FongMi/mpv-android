@@ -97,6 +97,72 @@ class BuildscriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
         self.assertNotIn("Skipping Gradle APK build", result.stdout)
 
+    def test_sdk_export_failure(self):
+        self.copy_source("export-renderer-sdk.sh")
+        headers = {"config.h": "#define PL_API_VER 1\n#define PL_HAVE_OPENGL 1\n"
+                   "#define PL_HAVE_VULKAN 1\n#define PL_HAVE_SHADERC 1\n",
+                   "opengl.h": "bool external_yuv;\n",
+                   "vulkan.h": "bool disable_storage;\nstruct pl_vulkan_ycbcr_params {\n"
+                   "const struct pl_vulkan_ycbcr_params *ycbcr;\n",
+                   "utils/libav.h": "pl_map_avframe_dovi_metadata(\n"}
+        for arch in ("armv7l", "arm64"):
+            prefix = "buildscripts/prefix/" + arch
+            for name, text in headers.items():
+                self.write(prefix + "/include/libplacebo/" + name, text)
+            for name in ("libplacebo.a", "libshaderc.a"):
+                self.write(prefix + "/lib/" + name, "fixture\n")
+        self.write("buildscripts/prefix/arm64/share/licenses/libplacebo/LICENSE", "license\n")
+        self.tool("cp", 'echo copy >> "$TRACE_FILE"\nexit 7\n')
+        workflow = (self.buildscripts.parent / ".github/workflows/build.yml").read_text()
+        match = re.search(r"(?m)^\s*- name: Export renderer SDK\s*\n\s*run: (.+)$", workflow)
+        self.assertIsNotNone(match)
+        assert (self.root / "build/renderer-sdk").resolve().is_relative_to(self.root)
+        result = self.run_shell(match.group(1))
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertEqual(self.trace(), ["copy"])
+        self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def check_installers(self, selected):
+        real_install = subprocess.check_output([self.bash, "-c", "command -v install"],
+                                               text=True, encoding="utf-8").strip()
+        self.environment["REAL_INSTALL"] = real_install
+        self.environment["INSTALL"] = "ginstall" if selected else ""
+        body = 'echo %s >> "$TRACE_FILE"\nexec "$REAL_INSTALL" "$@"\n'
+        self.tool("ginstall", body % "ginstall")
+        self.tool("install", 'exit 99\n' if selected else body % "install")
+        for name in ("meson", "ninja", "cmake"):
+            self.tool(name, "exit 0\n")
+        self.tool("git", "echo " + "1" * 40 + "\n")
+        self.copy_source("include/cmake-android.sh")
+        prefix = self.root / "buildscripts/prefix/arm64"
+        self.environment.update(prefix_dir=prefix.as_posix(), prefix_name="arm64",
+                                ndk_suffix="_fixture")
+        self.write("buildscripts/prefix/arm64/lib/libshaderc.a", "fixture\n")
+        for recipe, license_name in (("libplacebo", "LICENSE"),):
+            with self.subTest(recipe=recipe):
+                (self.root / "trace.txt").unlink(missing_ok=True)
+                self.copy_source("scripts/" + recipe + ".sh")
+                base = "buildscripts/deps/" + recipe
+                self.write(base + "/" + license_name, "license\n")
+                self.write(base + "/_build_fixture/src/include/libplacebo/config.h",
+                           "#define PL_HAVE_OPENGL 1\n#define PL_HAVE_VULKAN 1\n")
+                self.write("buildscripts/prefix/arm64/lib/pkgconfig/" + recipe + ".pc", "Libs:\n")
+                command = "../../scripts/" + recipe + ".sh build"
+                result = self.run_shell(command, self.root / base)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.trace(), ["ginstall" if selected else "install"])
+                target = prefix / "share/licenses" / recipe / license_name
+                self.assertEqual(target.read_text(), "license\n")
+                if os.name != "nt":
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
+    def test_selected_installers(self):
+        self.check_installers(selected=True)
+
+    def test_fallback_installers(self):
+        self.check_installers(selected=False)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--buildscripts", type=Path, required=True)
