@@ -97,6 +97,27 @@ class BuildscriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
         self.assertNotIn("Skipping Gradle APK build", result.stdout)
 
+    def test_patch_callers(self):
+        self.copy_source("include/patch-libbluray.sh")
+        patches = ("still-eof", "checked-seek", "menu-info", "read-origin", "bdj-pointer")
+        for name in patches:
+            self.write("buildscripts/patches/libbluray-1.4.1-" + name + ".patch", "fixture\n")
+        directory = self.root / "buildscripts/deps/libbluray"
+        directory.mkdir(parents=True)
+        self.tool("patch", 'case " $* " in *" --dry-run "*) exit 0 ;; esac\n'
+                  'if [ ! -f "$TRACE_FILE" ]; then\n'
+                  '    echo failed > "$TRACE_FILE"\n    exit 7\nfi\n'
+                  'echo continued >> "$TRACE_FILE"\n')
+        for caller, cwd in (("include/download-deps.sh", directory.parent),
+                            ("build-bdj-jars.sh", directory.parent.parent)):
+            with self.subTest(caller=caller):
+                (self.root / "trace.txt").unlink(missing_ok=True)
+                lines = (self.buildscripts / caller).read_text().splitlines()
+                command = next(line for line in lines if "include/patch-libbluray.sh" in line)
+                result = self.run_shell("source_dir=deps/libbluray\n" + command, cwd)
+                self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+                self.assertEqual(self.trace(), ["failed"])
+
     def test_sdk_export_failure(self):
         self.copy_source("export-renderer-sdk.sh")
         headers = {"config.h": "#define PL_API_VER 1\n#define PL_HAVE_OPENGL 1\n"
