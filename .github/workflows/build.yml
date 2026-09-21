@@ -56,7 +56,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install autoconf pkgconf libtool ninja-build cmake python3-pip gperf nasm
+          sudo apt-get install autoconf pkgconf libtool ninja-build cmake python3-pip gperf nasm patch ant
           sudo pip3 install meson
 
       - name: Download or build deps
@@ -72,6 +72,25 @@ jobs:
           MPV_ANDROID_NATIVE_ONLY: "1"
         run: |
           buildscripts/include/ci.sh build
+
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '8'
+          distribution: temurin
+
+      - name: Build matching BD-J jars
+        run: bash buildscripts/build-bdj-jars.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libbluray-bdj
+          path: |
+            buildscripts/build/bdj/libbluray-*.jar
+            buildscripts/prefix/arm64/lib/libbluray.a
+            buildscripts/prefix/armv7l/lib/libbluray.a
+            buildscripts/prefix/arm64/lib/libfreetype.a
+            buildscripts/prefix/armv7l/lib/libfreetype.a
+          if-no-files-found: error
 
       - name: Export renderer SDK
         run: buildscripts/export-renderer-sdk.sh
