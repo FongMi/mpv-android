@@ -1,14 +1,44 @@
 name: build
 
 on:
-  - push
-  - pull_request
+  workflow_dispatch:
+    inputs:
+      ffmpeg_commit:
+        description: Immutable FFmpeg commit (defaults to release-9.0-fongmi)
+        required: false
+        type: string
+      mpv_ref:
+        description: mpv branch, tag, or commit to build
+        required: true
+        default: fongmi
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FFMPEG_GIT_COMMIT: ${{ inputs.ffmpeg_commit || '' }}
+  MPV_GIT_URL: https://github.com/FongMi/mpv.git
+  MPV_GIT_REF: fongmi
+  MPV_ANDROID_ARCHES: armv7l arm64
 
 jobs:
   linux:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Checkout mpv source
+        uses: actions/checkout@v7
+        with:
+          repository: FongMi/mpv
+          ref: ${{ inputs.mpv_ref || 'fongmi' }}
+          path: buildscripts/deps/mpv
+          persist-credentials: false
+      - name: Record mpv source revision
+        run: |
+          printf 'mpv source: `%s`\n' "$(git -C buildscripts/deps/mpv rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-java@v6
         with:
           java-version: '17'
@@ -19,7 +49,7 @@ jobs:
 
       - uses: actions/cache@v6
         with:
-          path: gh-cache/
+          path: ${{ runner.temp }}/mpv-android-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
           enableCrossOsArchive: true
 
@@ -35,20 +65,16 @@ jobs:
           buildscripts/include/ci.sh install
         env:
           CACHE_MODE: "folder"
-          CACHE_FOLDER: "${{ github.workspace }}/gh-cache"
+          CACHE_FOLDER: "${{ runner.temp }}/mpv-android-cache"
 
-      - name: Build
+      - name: Build native libraries
+        env:
+          MPV_ANDROID_NATIVE_ONLY: "1"
         run: |
           buildscripts/include/ci.sh build
 
       - uses: actions/upload-artifact@v7
         with:
-          name: mpv-android-armeabi-v7a
-          path: app/build/outputs/apk/default/debug/app-default-armeabi-v7a-debug.apk
-          archive: false
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mpv-android-arm64-v8a
-          path: app/build/outputs/apk/default/debug/app-default-arm64-v8a-debug.apk
-          archive: false
+          name: mpv-android-fongmi
+          path: app/src/main/libs/**/*.so
+          if-no-files-found: error
