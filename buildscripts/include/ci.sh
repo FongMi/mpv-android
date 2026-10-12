@@ -50,12 +50,11 @@ fetch_prefix() {
 		fi
 		printf 'Expecting "%s",\nfound     "%s".\n' "$ci_cache_id" "$text"
 		if [[ "$text" == "$ci_cache_id" ]]; then
-			rm -rf prefix
-			mkdir -p prefix
-			if tar -xzf "$CACHE_FOLDER/data.tgz" -C prefix; then
+			if tar -xzf - -C prefix <"$CACHE_FOLDER/data.tgz" && validate_base_prefix; then
+				msg "Restored base prefix ($ci_cache_id)"
 				return 0
 			fi
-			echo "Failed to extract cached prefix; rebuilding."
+			echo "Invalid cached base prefix; rebuilding."
 			rm -rf prefix
 			mkdir -p prefix
 		fi
@@ -63,24 +62,77 @@ fetch_prefix() {
 	return 1
 }
 
+validate_base_prefix() {
+	local arch
+	for arch in $MPV_ANDROID_ARCHES; do
+		[[ -s "prefix/$arch/lib/libffmpeg.so" &&
+		   -s "prefix/$arch/lib/libshaderc.a" ]] || return 1
+	done
+}
+
 build_prefix() {
 	msg "Building the prefix ($ci_cache_id)..."
 
 	msg "Fetching deps"
-	IN_CI=1 ./include/download-deps.sh
+	IN_CI=1 ./include/download-deps.sh base
 
 	msg "Compiling"
 	for arch in $MPV_ANDROID_ARCHES; do
 		msg "Compiling dependencies for $arch"
-		./buildall.sh --arch "$arch" --only-deps mpv
+		./buildall.sh --arch "$arch" --only-deps mpv-base
 	done
+	if ! validate_base_prefix; then
+		echo "Incomplete base prefix for $MPV_ANDROID_ARCHES." >&2
+		return 1
+	fi
 
 	if [[ "$CACHE_MODE" == folder && -w "$CACHE_FOLDER" ]]; then
 		msg "Compressing the prefix"
-		tar -cvzf "$CACHE_FOLDER/data.tgz" -C prefix .
+		tar -czf - -C prefix . >"$CACHE_FOLDER/data.tgz"
 		echo "$ci_cache_id" >"$CACHE_FOLDER/id.txt"
 	fi
 }
+
+validate_libplacebo() {
+	local root=$1 arch installed
+	for arch in $MPV_ANDROID_ARCHES; do
+		installed="$root/$arch/usr/local"
+		[[ -s "$installed/lib/libplacebo.a" &&
+		   -s "$installed/lib/pkgconfig/libplacebo.pc" &&
+		   -s "$installed/include/libplacebo/config.h" &&
+		   -s "$installed/share/licenses/libplacebo/LICENSE" ]] || return 1
+	done
+}
+
+install_libplacebo() (
+	local stage arch cache=${LIBPLACEBO_CACHE_FOLDER:-}
+	stage=$(mktemp -d)
+	trap 'rm -rf "$stage"' EXIT
+	if [[ "$CACHE_MODE" == folder && -n "$cache" &&
+	      -f "$cache/id.txt" && $(cat "$cache/id.txt") == "$libplacebo_cache_id" ]] &&
+	   tar -xzf - -C "$stage" <"$cache/data.tgz" && validate_libplacebo "$stage"; then
+		msg "Restored libplacebo ($libplacebo_cache_id)"
+	else
+		rm -rf "$stage"
+		mkdir -p "$stage"
+		msg "Building libplacebo ($libplacebo_cache_id)"
+		IN_CI=1 ./include/download-deps.sh libplacebo
+		for arch in $MPV_ANDROID_ARCHES; do
+			LIBPLACEBO_DESTDIR="$stage/$arch" ./buildall.sh --arch "$arch" -n libplacebo
+		done
+		if ! validate_libplacebo "$stage"; then
+			echo "Incomplete libplacebo install for $MPV_ANDROID_ARCHES." >&2
+			return 1
+		fi
+		if [[ "$CACHE_MODE" == folder && -n "$cache" && -w "$cache" ]]; then
+			tar -czf - -C "$stage" . >"$cache/data.tgz"
+			printf '%s\n' "$libplacebo_cache_id" >"$cache/id.txt"
+		fi
+	fi
+	for arch in $MPV_ANDROID_ARCHES; do
+		cp -a "$stage/$arch/usr/local/." "prefix/$arch/"
+	done
+)
 
 export WGET="wget --progress=bar:force"
 : "${MPV_GIT_URL:=https://github.com/FongMi/mpv.git}"
@@ -102,8 +154,7 @@ if [[ "$1" == export || "$1" == install ]]; then
 		"ffmpeg=$FFMPEG_GIT_COMMIT" \
 		"uavs3d=$v_ci_uavs3d" \
 		"dav1d=$DAV1D_GIT_COMMIT" \
-		"libass=$LIBASS_GIT_COMMIT" \
-		"libplacebo=$LIBPLACEBO_GIT_COMMIT" | sha256sum)
+		"libass=$LIBASS_GIT_COMMIT" | sha256sum)
 	native_source_id=${native_source_id%%[[:space:]]*}
 	if [[ ! "$native_source_id" =~ ^[0-9a-f]{64}$ ]]; then
 		echo "Failed to compute native source cache identifier." >&2
@@ -111,9 +162,10 @@ if [[ "$1" == export || "$1" == install ]]; then
 	fi
 	# mpv and its JNI wrapper are rebuilt after restoring the dependency prefix.
 	prefix_recipe_manifest=$(
-		for recipe in buildall.sh include/*.sh patches/*.patch scripts/*.sh; do
+		for recipe in buildall.sh include/*.sh include/*.py patches/*.patch scripts/*.sh; do
 			case "$recipe" in
-				include/ci.sh|scripts/mpv.sh|scripts/mpv-android.sh) continue ;;
+				include/ci.sh|scripts/libplacebo.sh|scripts/mpv.sh|scripts/mpv-android.sh)
+					continue ;;
 			esac
 			sha256sum "$recipe" || exit 1
 		done
@@ -131,7 +183,12 @@ if [[ "$1" == export || "$1" == install ]]; then
 		echo "Failed to compute dependency cache identifier." >&2
 		exit 1
 	fi
-	ci_cache_id="prefix-${ci_cache_id}-${MPV_ANDROID_ARCHES// /_}"
+	ci_cache_id="prefix-base-${ci_cache_id}-${MPV_ANDROID_ARCHES// /_}"
+	libplacebo_recipe=$(sha256sum scripts/libplacebo.sh)
+	# libplacebo links against shaderc from the matching base prefix.
+	libplacebo_cache_id=$(printf '%s\n' "$ci_cache_id" "$LIBPLACEBO_GIT_COMMIT" \
+		"$libplacebo_recipe" | sha256sum)
+	libplacebo_cache_id="prefix-libplacebo-${libplacebo_cache_id%%[[:space:]]*}-${MPV_ANDROID_ARCHES// /_}"
 fi
 
 if [ "$1" = "export" ]; then
@@ -142,6 +199,7 @@ if [ "$1" = "export" ]; then
 	echo "LIBASS_GIT_COMMIT=$LIBASS_GIT_COMMIT"
 	echo "LIBPLACEBO_GIT_COMMIT=$LIBPLACEBO_GIT_COMMIT"
 	echo "CACHE_IDENTIFIER=$ci_cache_id"
+	echo "LIBPLACEBO_CACHE_IDENTIFIER=$libplacebo_cache_id"
 	exit 0
 elif [ "$1" = "install" ]; then
 	# install deps
@@ -165,8 +223,12 @@ elif [ "$1" = "install" ]; then
 	fi
 
 	msg "Trying to fetch existing prefix"
+	rm -rf prefix
 	mkdir -p prefix
-	fetch_prefix || build_prefix
+	if ! fetch_prefix; then
+		build_prefix
+	fi
+	install_libplacebo
 	exit 0
 elif [ "$1" = "build" ]; then
 	# run build

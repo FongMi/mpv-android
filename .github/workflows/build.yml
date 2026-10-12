@@ -54,8 +54,14 @@ jobs:
 
       - uses: actions/cache@v6
         with:
-          path: ${{ runner.temp }}/mpv-android-cache/
+          path: ${{ runner.temp }}/mpv-android-base-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
+          enableCrossOsArchive: true
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/mpv-android-libplacebo-cache/
+          key: "${{ env.LIBPLACEBO_CACHE_IDENTIFIER }}"
           enableCrossOsArchive: true
 
       - name: Install packages
@@ -66,11 +72,12 @@ jobs:
 
       - name: Download or build deps
         run: |
-          mkdir -p "$CACHE_FOLDER"
+          mkdir -p "$CACHE_FOLDER" "$LIBPLACEBO_CACHE_FOLDER"
           buildscripts/include/ci.sh install
         env:
           CACHE_MODE: "folder"
-          CACHE_FOLDER: "${{ runner.temp }}/mpv-android-cache"
+          CACHE_FOLDER: "${{ runner.temp }}/mpv-android-base-cache"
+          LIBPLACEBO_CACHE_FOLDER: "${{ runner.temp }}/mpv-android-libplacebo-cache"
 
       - name: Build native libraries
         env:
