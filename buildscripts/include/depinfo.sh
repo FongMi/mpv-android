@@ -59,7 +59,8 @@ dep_libarchive=(libiconv bzip2 xz zstd)
 dep_libdvdread=()
 dep_libdvdnav=(libdvdread)
 dep_rubberband=()
-dep_mpv=(ffmpeg libass lua libplacebo curl libbluray libiconv uchardet libarchive libdvdnav rubberband)
+dep_mpv_base=(ffmpeg libass lua shaderc curl libbluray libiconv uchardet libarchive libdvdnav rubberband)
+dep_mpv=("${dep_mpv_base[@]}" libplacebo)
 dep_mpv_android=(mpv)
 
 
