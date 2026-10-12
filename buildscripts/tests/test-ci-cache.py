@@ -49,6 +49,8 @@ def main():
         changed(root / "patches/libdvdnav-7.0.0-menu-availability.patch", baseline, True)
         changed(root / "scripts/libdvdnav.sh", baseline, True)
         changed(root / "include/download-deps.sh", baseline, True)
+        changed(root / "include/ffmpeg-shared.py", baseline, True)
+        changed(root / "scripts/ffmpeg.sh", baseline, True)
         changed(root / "scripts/mpv.sh", baseline, False)
         changed(root / "scripts/mpv-android.sh", baseline, False)
         added = root / "patches/libdvdnav-cache-fixture.patch"
