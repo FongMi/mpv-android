@@ -238,7 +238,9 @@ class BuildscriptTests(unittest.TestCase):
 
     def test_ci_existing_libplacebo_source(self):
         source = (self.buildscripts / "include/download-deps.sh").read_text()
-        command = source.split("# libplacebo\n", 1)[1].split("# curl\n", 1)[0]
+        start = source.index("download_libplacebo() {")
+        end = source.index('\nif [[ "$scope" == libplacebo ]]; then', start)
+        command = source[start:end] + "\ndownload_libplacebo\n"
         directory = self.root / "buildscripts/deps"
         repo = directory / "libplacebo"
         repo.mkdir(parents=True)
@@ -724,6 +726,34 @@ class BuildscriptTests(unittest.TestCase):
 
     def test_fallback_installers(self):
         self.check_installers(selected=False)
+
+    def test_libplacebo_staged_install(self):
+        self.copy_source("scripts/libplacebo.sh")
+        base = "buildscripts/deps/libplacebo"
+        self.write(base + "/LICENSE", "license\n")
+        self.write(base + "/_build_fixture/src/include/libplacebo/config.h",
+                   "#define PL_HAVE_OPENGL 1\n#define PL_HAVE_VULKAN 1\n")
+        self.write("buildscripts/prefix/arm64/lib/libshaderc.a", "shaderc\n")
+        prefix = self.root / "buildscripts/prefix/arm64"
+        stage = self.root / "renderer"
+        self.environment.update(prefix_dir=prefix.as_posix(), ndk_suffix="_fixture",
+                                LIBPLACEBO_DESTDIR=stage.as_posix())
+        self.tool("meson", 'test "${3}" = --cross-file\n'
+                  'test "${4}" = "$prefix_dir/crossfile.txt"\n')
+        self.tool("ninja", 'if [ "$3" = install ]; then\n'
+                  '    test "$DESTDIR" = "$LIBPLACEBO_DESTDIR"\n'
+                  '    pc="$DESTDIR/usr/local/lib/pkgconfig"\n'
+                  '    mkdir -p "$pc"\n'
+                  '    echo "Libs: -lplacebo" > "$pc/libplacebo.pc"\n'
+                  'fi\n')
+        result = self.run_shell("../../scripts/libplacebo.sh build", self.root / base)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        installed = stage / "usr/local"
+        self.assertEqual((installed / "lib/pkgconfig/libplacebo.pc").read_text(),
+                         "Libs: -lplacebo -lshaderc -lc++\n")
+        self.assertEqual((installed / "share/licenses/libplacebo/LICENSE").read_text(),
+                         "license\n")
+        self.assertFalse((prefix / "lib/pkgconfig/libplacebo.pc").exists())
 
 
 if __name__ == "__main__":

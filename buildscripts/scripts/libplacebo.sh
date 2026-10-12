@@ -37,16 +37,15 @@ for backend in OPENGL VULKAN; do
 done
 
 ninja -C "$build" -j"$cores"
-DESTDIR="$prefix_dir" ninja -C "$build" install
+destdir=${LIBPLACEBO_DESTDIR:-$prefix_dir}
+install_prefix=$prefix_dir
+if [ -n "${LIBPLACEBO_DESTDIR:-}" ]; then
+	install_prefix=$destdir/usr/local
+fi
+DESTDIR="$destdir" ninja -C "$build" install
 "${INSTALL:-install}" -Dm644 LICENSE \
-	"$prefix_dir/share/licenses/libplacebo/LICENSE"
-
-link_libs=()
-for lib in shaderc; do
-	[ -f "$prefix_dir/lib/lib${lib}.a" ] && link_libs+=("-l${lib}")
-done
-link_libs+=("-lc++")
+	"$install_prefix/share/licenses/libplacebo/LICENSE"
 
 # add missing libraries for static linking
 # this isn't "-lstdc++" due to a meson bug: https://github.com/mesonbuild/meson/issues/11300
-${SED:-sed} "/^Libs:/ s|$| ${link_libs[*]}|" "$prefix_dir/lib/pkgconfig/libplacebo.pc" -i
+${SED:-sed} '/^Libs:/ s|$| -lshaderc -lc++|' "$install_prefix/lib/pkgconfig/libplacebo.pc" -i

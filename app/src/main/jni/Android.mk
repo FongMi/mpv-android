@@ -14,45 +14,7 @@ PREFIX = $(PREFIX_X86)
 endif
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := libswresample
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libpostproc
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-# only include if library file exists
-ifneq (,$(wildcard $(LOCAL_SRC_FILES)))
-include $(PREBUILT_SHARED_LIBRARY)
-endif
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libavutil
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libavcodec
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libavformat
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libswscale
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libavfilter
-LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
-include $(PREBUILT_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libavdevice
+LOCAL_MODULE := libffmpeg
 LOCAL_SRC_FILES := $(PREFIX)/lib/$(LOCAL_MODULE).so
 LOCAL_EXPORT_C_INCLUDES := $(PREFIX)/include
 include $(PREBUILT_SHARED_LIBRARY)
@@ -79,6 +41,6 @@ LOCAL_SRC_FILES := \
 	event.cpp \
 	thumbnail.cpp
 LOCAL_LDLIBS    := -llog
-LOCAL_SHARED_LIBRARIES := swscale avcodec mpv
+LOCAL_SHARED_LIBRARIES := ffmpeg mpv
 
 include $(BUILD_SHARED_LIBRARY)
