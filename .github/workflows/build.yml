@@ -7,6 +7,10 @@ on:
         description: Immutable FFmpeg commit (defaults to release-9.1-fongmi)
         required: false
         type: string
+      libplacebo_commit:
+        description: Immutable libplacebo commit (defaults to fongmi)
+        required: false
+        type: string
       mpv_ref:
         description: mpv branch, tag, or commit to build
         required: true
@@ -18,6 +22,7 @@ permissions:
 
 env:
   FFMPEG_GIT_COMMIT: ${{ inputs.ffmpeg_commit || '' }}
+  LIBPLACEBO_GIT_COMMIT: ${{ inputs.libplacebo_commit || '' }}
   MPV_GIT_URL: https://github.com/FongMi/mpv.git
   MPV_GIT_REF: fongmi
   MPV_ANDROID_ARCHES: armv7l arm64

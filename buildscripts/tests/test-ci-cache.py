@@ -29,10 +29,11 @@ def main():
 
         def identity():
             result = subprocess.run(
-                [args.bash, "include/ci.sh", "export"], cwd=root, env=environment,
+                [args.bash, "-e", "include/ci.sh", "export"], cwd=root, env=environment,
                 text=True, capture_output=True, check=True, timeout=30)
             values = dict(line.split("=", 1) for line in result.stdout.splitlines())
             assert values["FFMPEG_GIT_COMMIT"] == environment["FFMPEG_GIT_COMMIT"]
+            assert values["LIBPLACEBO_GIT_COMMIT"] == environment["LIBPLACEBO_GIT_COMMIT"].lower()
             assert len(values["CACHE_IDENTIFIER"]) <= 512, len(values["CACHE_IDENTIFIER"])
             return values["CACHE_IDENTIFIER"]
 
@@ -58,8 +59,27 @@ def main():
         assert identity() != baseline
         added.unlink()
         assert identity() == baseline
-        environment["FFMPEG_GIT_COMMIT"] = "a" * 40
-        assert identity() != baseline
+        for name in ("FFMPEG", "LIBPLACEBO"):
+            key = f"{name}_GIT_COMMIT"
+            original = environment[key]
+            try:
+                environment[key] = "a" * 40
+                assert identity() != baseline
+            finally:
+                environment[key] = original
+            assert identity() == baseline
+        environment["LIBPLACEBO_GIT_COMMIT"] = "A" * 40
+        normalized = identity()
+        environment["LIBPLACEBO_GIT_COMMIT"] = "a" * 40
+        assert identity() == normalized
+        for commit in ("fongmi", "a" * 39, "g" * 40):
+            environment["LIBPLACEBO_GIT_COMMIT"] = commit
+            result = subprocess.run(
+                [args.bash, "-e", "include/ci.sh", "export"], cwd=root, env=environment,
+                text=True, capture_output=True, timeout=30)
+            assert result.returncode != 0
+            assert "Invalid libplacebo commit" in result.stderr
+            assert not result.stdout
     print("Dependency cache identity: passed (patches, recipes, native refs, mpv isolation)")
 
 
