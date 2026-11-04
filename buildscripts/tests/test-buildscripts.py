@@ -2,6 +2,7 @@
 """Check buildscript failure propagation and install-tool selection on the host."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -118,7 +119,7 @@ class BuildscriptTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
                 self.assertEqual(self.trace(), ["failed"])
 
-    def test_sdk_export_failure(self):
+    def prepare_sdk(self):
         self.copy_source("export-renderer-sdk.sh")
         headers = {"config.h": "#define PL_API_VER 1\n#define PL_HAVE_OPENGL 1\n"
                    "#define PL_HAVE_VULKAN 1\n#define PL_HAVE_SHADERC 1\n",
@@ -130,9 +131,32 @@ class BuildscriptTests(unittest.TestCase):
             prefix = "buildscripts/prefix/" + arch
             for name, text in headers.items():
                 self.write(prefix + "/include/libplacebo/" + name, text)
-            for name in ("libplacebo.a", "libshaderc.a"):
+            for name in ("libplacebo.a", "libshaderc.a", "libmpv-motion.a"):
                 self.write(prefix + "/lib/" + name, "fixture\n")
         self.write("buildscripts/prefix/arm64/share/licenses/libplacebo/LICENSE", "license\n")
+        core = "buildscripts/deps/mpv/"
+        self.write(core + "video/out/gpu_next/motion.c", "motion source\n")
+        self.write(core + "video/out/gpu_next/motion.h", "motion header\n")
+        self.write(core + "LICENSE.LGPL", "motion license\n")
+        for arch in ("armv7l", "arm64"):
+            self.write("buildscripts/prefix/" + arch + "/include/mpv-motion/motion.h",
+                       "motion header\n")
+            self.write("buildscripts/prefix/" + arch + "/share/mpv-motion/provenance.properties",
+                       "schema.version=1\nmpv-motion.arch=" + arch + "\nmpv-motion.commit=" + "1" * 40 + "\n"
+                       + "".join("mpv-motion." + field + ".sha256="
+                                 + hashlib.sha256(content).hexdigest() + "\n"
+                                 for field, content in (("source", b"motion source\n"),
+                                                        ("header", b"motion header\n"),
+                                                        ("archive", b"fixture\n"))))
+        self.tool("git", 'case "$3" in\n'
+                  'rev-parse) echo ' + "1" * 40 + ';;\n'
+                  'remote) echo https://example.invalid/mpv.git;;\n'
+                  'diff|cat-file) exit 0;;\n'
+                  '*) exit 2;;\nesac\n')
+        return "buildscripts/export-renderer-sdk.sh"
+
+    def test_sdk_export_failure(self):
+        self.prepare_sdk()
         self.tool("cp", 'echo copy >> "$TRACE_FILE"\nexit 7\n')
         workflow = (self.buildscripts.parent / ".github/workflows/build.yml").read_text()
         match = re.search(r"(?m)^\s*- name: Export renderer SDK\s*\n\s*run: (.+)$", workflow)
@@ -142,6 +166,177 @@ class BuildscriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
         self.assertEqual(self.trace(), ["copy"])
         self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def test_sdk_export_motion_provenance_and_manifests(self):
+        command = self.prepare_sdk()
+        result = self.run_shell(command)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.root / "build/renderer-sdk"
+        properties = dict(line.split("=", 1) for line in
+                          (output / "provenance.properties").read_text().splitlines())
+        self.assertEqual(properties["schema.version"], "3")
+        self.assertEqual(properties["renderer-sdk.library.path"], "lib/libplacebo.a")
+        self.assertEqual(properties["mpv-motion.commit"], "1" * 40)
+        self.assertEqual(properties["mpv-motion.repository"], "https://example.invalid/mpv.git")
+        for field, content in (("source", b"motion source\n"),
+                               ("header", b"motion header\n")):
+            self.assertEqual(properties["mpv-motion." + field + ".sha256"],
+                             hashlib.sha256(content).hexdigest())
+        self.assertEqual((output / "LICENSE.mpv-motion").read_text(), "motion license\n")
+        manifest = (output / "files.sha256").read_text()
+        for abi in ("armeabi-v7a", "arm64-v8a"):
+            self.assertIn("./" + abi + "/lib/libmpv-motion.a", manifest)
+            self.assertIn("./" + abi + "/include/mpv-motion/motion.h", manifest)
+            self.assertIn("./" + abi + "/motion-build.properties", manifest)
+            # Preserve the existing libplacebo-only header contract.
+            self.assertNotIn("mpv-motion", (output / abi / "headers.sha256").read_text())
+        self.assertIn("./LICENSE.mpv-motion", manifest)
+        checked = self.run_shell("sha256sum -c files.sha256", output)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_sdk_export_rejects_missing_motion_components(self):
+        command = self.prepare_sdk()
+        paths = ["buildscripts/deps/mpv/LICENSE.LGPL",
+                 "buildscripts/deps/mpv/video/out/gpu_next/motion.c",
+                 "buildscripts/deps/mpv/video/out/gpu_next/motion.h"]
+        for arch in ("armv7l", "arm64"):
+            paths.extend(["buildscripts/prefix/" + arch + "/lib/libmpv-motion.a",
+                          "buildscripts/prefix/" + arch + "/include/mpv-motion/motion.h",
+                          "buildscripts/prefix/" + arch + "/share/mpv-motion/provenance.properties"])
+        for name in paths:
+            with self.subTest(component=name):
+                path = self.root / name
+                original = path.read_bytes()
+                path.unlink()
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("missing", result.stderr)
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_header_drift_and_abi_api_mismatch(self):
+        command = self.prepare_sdk()
+        for name, replacement, error in (
+                ("include/mpv-motion/motion.h", "stale header\n", "Installed motion header"),
+                ("include/libplacebo/config.h", "#define PL_API_VER 2\n", "API differs"),
+                ("include/libplacebo/opengl.h", "", "renderer capability")):
+            with self.subTest(component=name):
+                path = self.root / "buildscripts/prefix/arm64" / name
+                original = path.read_bytes()
+                path.write_text(replacement)
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stderr)
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_stale_build_receipt(self):
+        command = self.prepare_sdk()
+        result = self.run_shell(command)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name, content, field in (
+                ("buildscripts/deps/mpv/video/out/gpu_next/motion.c",
+                 b"new committed core with unchanged header\n", "source.sha256"),
+                ("buildscripts/prefix/arm64/lib/libmpv-motion.a",
+                 b"replaced archive\n", "archive.sha256"),
+                ("buildscripts/prefix/arm64/share/mpv-motion/provenance.properties",
+                 b"schema.version=1\nmpv-motion.arch=arm64\nmpv-motion.commit=" + b"2" * 40 + b"\n", "commit")):
+            with self.subTest(field=field):
+                path = self.root / name
+                original = path.read_bytes()
+                path.write_bytes(content)
+                try:
+                    result = self.run_shell(command)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("build receipt mismatch", result.stderr)
+                    self.assertIn(field, result.stderr)
+                    self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+                finally:
+                    path.write_bytes(original)
+
+    def test_sdk_export_rejects_archive_and_receipt_from_other_abi(self):
+        command = self.prepare_sdk()
+        prefix = self.root / "buildscripts/prefix"
+        for name in ("lib/libmpv-motion.a", "share/mpv-motion/provenance.properties"):
+            (prefix / "arm64" / name).write_bytes((prefix / "armv7l" / name).read_bytes())
+        result = self.run_shell(command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build receipt mismatch for arm64-v8a: mpv-motion.arch", result.stderr)
+        self.assertFalse((self.root / "build/renderer-sdk/provenance.properties").exists())
+
+    def prepare_motion_build(self):
+        self.copy_source("scripts/mpv.sh")
+        prefix = self.root / "buildscripts/prefix/arm64"
+        self.environment.update(prefix_dir=prefix.as_posix(), prefix_name="arm64",
+                                ndk_suffix="_fixture")
+        for name in ("include/iconv.h", "lib/libiconv.a", "lib/libcharset.a"):
+            self.write("buildscripts/prefix/arm64/" + name, "fixture\n")
+        core = "buildscripts/deps/mpv/"
+        self.write(core + "meson.build", "# fixture\n")
+        self.write(core + "video/out/gpu_next/motion.c", "motion source\n")
+        self.write(core + "video/out/gpu_next/motion.h", "motion header\n")
+        self.write(core + "LICENSE.LGPL", "motion license\n")
+        self.tool("git", 'case "$1" in\nrev-parse) echo ' + "1" * 40
+                  + ';;\ndiff) exit 0;;\n*) exit 2;;\nesac\n')
+        self.tool("meson", "exit 0\n")
+        install = ('case " $* " in *" install "*)\n'
+                   'mkdir -p "$prefix_dir/lib" "$prefix_dir/include/mpv-motion"\n'
+                   'cp video/out/gpu_next/motion.h "$prefix_dir/include/mpv-motion/"\n'
+                   'echo fixture > "$prefix_dir/lib/libmpv-motion.a";;\nesac\n')
+        self.tool("ninja", install)
+        return self.root / core, prefix / "share/mpv-motion/provenance.properties", install
+
+    def test_motion_build_records_installed_archive(self):
+        directory, receipt, _ = self.prepare_motion_build()
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        properties = dict(line.split("=", 1) for line in receipt.read_text().splitlines())
+        self.assertEqual(properties["mpv-motion.commit"], "1" * 40)
+        self.assertEqual(properties["mpv-motion.arch"], "arm64")
+        for field, content in (("source", b"motion source\n"),
+                               ("header", b"motion header\n"), ("archive", b"fixture\n")):
+            self.assertEqual(properties["mpv-motion." + field + ".sha256"],
+                             hashlib.sha256(content).hexdigest())
+
+    def test_motion_build_failure_or_source_change_invalidates_receipt(self):
+        directory, receipt, install = self.prepare_motion_build()
+        for body in ("exit 7\n", install + "exit 7\n",
+                     install + "echo changed >> video/out/gpu_next/motion.c\n"):
+            with self.subTest(ninja=body):
+                receipt.parent.mkdir(parents=True, exist_ok=True)
+                receipt.write_text("old receipt\n")
+                self.tool("ninja", body)
+                result = self.run_shell("../../scripts/mpv.sh build", directory)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(receipt.exists())
+
+    def test_sdk_export_rejects_unresolved_provenance(self):
+        command = self.prepare_sdk()
+        for stage, error in (("rev-parse", "resolved mpv commit"),
+                             ("cat-file", "absent from its commit")):
+            with self.subTest(stage=stage):
+                self.tool("git", 'case "$3" in\n'
+                          'rev-parse) echo ' + ("unknown" if stage == "rev-parse"
+                                                else "1" * 40) + ';;\n'
+                          'cat-file) exit 1;;\n'
+                          '*) exit 2;;\nesac\n')
+                result = self.run_shell(command)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+
+    def test_sdk_export_rejects_dirty_motion_source(self):
+        command = self.prepare_sdk()
+        self.tool("git", 'case "$3" in\n'
+                  'rev-parse) echo ' + "1" * 40 + ';;\n'
+                  'remote) echo https://example.invalid/mpv.git;;\n'
+                  'cat-file) exit 0;;\n'
+                  'diff) exit 1;;\n'
+                  '*) exit 2;;\nesac\n')
+        result = self.run_shell(command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("differs from its source commit", result.stderr)
 
     def check_installers(self, selected):
         real_install = subprocess.check_output([self.bash, "-c", "command -v install"],
