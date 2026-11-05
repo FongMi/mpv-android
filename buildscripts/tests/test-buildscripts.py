@@ -278,6 +278,7 @@ class BuildscriptTests(unittest.TestCase):
         self.write(core + "video/out/gpu_next/motion.c", "motion source\n")
         self.write(core + "video/out/gpu_next/motion.h", "motion header\n")
         self.write(core + "LICENSE.LGPL", "motion license\n")
+        self.write(core + "_build_fixture/libmpv.so", "shared library fixture\n")
         self.tool("git", 'case "$1" in\nrev-parse) echo ' + "1" * 40
                   + ';;\ndiff) exit 0;;\n*) exit 2;;\nesac\n')
         self.tool("meson", "exit 0\n")
@@ -311,6 +312,31 @@ class BuildscriptTests(unittest.TestCase):
                 result = self.run_shell("../../scripts/mpv.sh build", directory)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(receipt.exists())
+
+    def test_motion_build_missing_shared_library_fails_without_rebuild(self):
+        directory, receipt, install = self.prepare_motion_build()
+        (directory / "_build_fixture/libmpv.so").unlink()
+        self.write("buildscripts/deps/mpv/_build_fixture/libmpv.a", "static fixture\n")
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text("stale receipt\n")
+        self.tool("meson", 'echo meson >> "$TRACE_FILE"\n')
+        self.tool("ninja", 'echo ninja >> "$TRACE_FILE"\n' + install)
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required shared libmpv", result.stderr)
+        self.assertEqual(self.trace(), ["meson", "ninja"])
+        self.assertFalse(receipt.exists())
+        self.assertTrue((directory / "_build_fixture/libmpv.a").is_file())
+
+    def test_motion_build_shared_output_ignores_stale_static_archive(self):
+        directory, receipt, install = self.prepare_motion_build()
+        self.write("buildscripts/deps/mpv/_build_fixture/libmpv.a", "stale static fixture\n")
+        self.tool("meson", 'echo meson >> "$TRACE_FILE"\n')
+        self.tool("ninja", 'echo ninja >> "$TRACE_FILE"\n' + install)
+        result = self.run_shell("../../scripts/mpv.sh build", directory)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.trace(), ["meson", "ninja", "ninja"])
+        self.assertTrue(receipt.is_file())
 
     def test_sdk_export_rejects_unresolved_provenance(self):
         command = self.prepare_sdk()

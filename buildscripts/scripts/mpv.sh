@@ -64,10 +64,9 @@ meson setup "$build" --cross-file "$prefix_dir"/crossfile.txt \
 	-Dmanpage-build=disabled
 
 ninja -C "$build" -j"$cores"
-if [ -f "$build/libmpv.a" ]; then
-	echo >&2 "Meson fucked up, forcing rebuild."
-	$0 clean
-	exec $0 build
+if [ ! -s "$build/libmpv.so" ]; then
+	echo "Meson did not produce the required shared libmpv: $build/libmpv.so" >&2
+	exit 1
 fi
 DESTDIR="$prefix_dir" ninja -C "$build" install
 
