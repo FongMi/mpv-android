@@ -136,6 +136,7 @@ def main():
         baseline = identity()
         assert identity() == baseline
         for path in ("patches/libdvdnav-7.0.0-menu-availability.patch",
+                     "patches/libass-font-file.patch",
                      "scripts/libdvdnav.sh", "scripts/shaderc.sh",
                      "patches/shaderc-r30-validator-friendly-names.patch",
                      "include/download-deps.sh", "include/ffmpeg-shared.py",
