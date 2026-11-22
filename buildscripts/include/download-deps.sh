@@ -275,15 +275,25 @@ if [ ! -d rubberband ]; then
 fi
 
 # libass
+if [ "$IN_CI" -eq 1 ]; then
+	: "${LIBASS_GIT_COMMIT:?LIBASS_GIT_COMMIT must be set in CI}"
+fi
 if [ ! -d libass ]; then
 	if [ "$IN_CI" -eq 1 ]; then
-		: "${LIBASS_GIT_COMMIT:?LIBASS_GIT_COMMIT must be set in CI}"
 		clone_ci_commit \
 			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" \
 			"$LIBASS_GIT_COMMIT" libass
 	else
 		git clone --branch "$v_ci_libass" \
 			"${LIBASS_GIT_URL:-https://github.com/libass/libass}" libass
+	fi
+fi
+if [ "$IN_CI" -eq 1 ]; then
+	if [ ! -e libass/.git ] ||
+		! actual_commit=$(git -C libass rev-parse --verify 'HEAD^{commit}') ||
+		[[ "$actual_commit" != "$LIBASS_GIT_COMMIT" ]]; then
+		echo "libass source revision does not match LIBASS_GIT_COMMIT." >&2
+		exit 1
 	fi
 fi
 for libass_patch in ../patches/libass-font-size-em.patch ../patches/libass-line-height.patch; do
