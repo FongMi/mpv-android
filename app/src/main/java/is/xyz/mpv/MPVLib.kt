@@ -63,6 +63,10 @@ object MPVLib {
     external fun setPropertyString(property: String, value: String): Int
     external fun getPropertyByteArray(property: String): ByteArray?
 
+    external fun supportsAudioPcm(): Boolean
+    external fun setAudioPcmCapture(enabled: Boolean): Int
+    external fun readAudioPcm(buffer: java.nio.ByteBuffer, frame: LongArray): Int
+
     external fun observeProperty(property: String, format: Int): Int
 
     private val observers = mutableListOf<EventObserver>()

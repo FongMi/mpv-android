@@ -39,8 +39,9 @@ LOCAL_SRC_FILES := \
 	jni_utils.cpp \
 	property.cpp \
 	event.cpp \
+	audio_pcm.cpp \
 	thumbnail.cpp
-LOCAL_LDLIBS    := -llog
+LOCAL_LDLIBS    := -llog -ldl
 LOCAL_SHARED_LIBRARIES := ffmpeg mpv
 
 include $(BUILD_SHARED_LIBRARY)
